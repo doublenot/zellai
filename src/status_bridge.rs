@@ -92,6 +92,14 @@ impl StatusBridge {
     pub fn stale_threshold_s(&self) -> u64 {
         self.stale_threshold_s
     }
+
+    /// Remove tracked sessions whose IDs are not in the given set.
+    /// Call this after `ls` to clean up sessions whose files have been deleted.
+    pub fn retain_sessions(&mut self, active_ids: &[&str]) -> usize {
+        let before = self.agents.len();
+        self.agents.retain(|k, _| active_ids.contains(&k.as_str()));
+        before - self.agents.len()
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -303,6 +311,68 @@ mod tests {
         let bridge = StatusBridge::new("~/.local/share/zellai/sessions", 60);
         assert_eq!(bridge.sessions_dir(), "~/.local/share/zellai/sessions");
         assert_eq!(bridge.stale_threshold_s(), 60);
+        assert!(!bridge.has_agents());
+    }
+
+    // -----------------------------------------------------------------------
+    // retain_sessions
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_retain_sessions_removes_missing() {
+        let mut bridge = new_bridge();
+        bridge
+            .update_from_json("sess-a", &make_json("sess-a", "idle", 1000))
+            .unwrap();
+        bridge
+            .update_from_json("sess-b", &make_json("sess-b", "thinking", 1000))
+            .unwrap();
+        bridge
+            .update_from_json("sess-c", &make_json("sess-c", "idle", 1000))
+            .unwrap();
+
+        // Only sess-a and sess-c are still on disk
+        let removed = bridge.retain_sessions(&["sess-a", "sess-c"]);
+        assert_eq!(removed, 1);
+        assert_eq!(bridge.session_ids().len(), 2);
+        assert!(!bridge.session_ids().contains(&"sess-b".to_string()));
+    }
+
+    #[test]
+    fn test_retain_sessions_keeps_active() {
+        let mut bridge = new_bridge();
+        bridge
+            .update_from_json("sess-a", &make_json("sess-a", "idle", 1000))
+            .unwrap();
+        bridge
+            .update_from_json("sess-b", &make_json("sess-b", "thinking", 1000))
+            .unwrap();
+
+        let removed = bridge.retain_sessions(&["sess-a", "sess-b"]);
+        assert_eq!(removed, 0);
+        assert_eq!(bridge.session_ids().len(), 2);
+    }
+
+    #[test]
+    fn test_retain_sessions_empty_active_removes_all() {
+        let mut bridge = new_bridge();
+        bridge
+            .update_from_json("sess-a", &make_json("sess-a", "idle", 1000))
+            .unwrap();
+        bridge
+            .update_from_json("sess-b", &make_json("sess-b", "thinking", 1000))
+            .unwrap();
+
+        let removed = bridge.retain_sessions(&[]);
+        assert_eq!(removed, 2);
+        assert!(!bridge.has_agents());
+    }
+
+    #[test]
+    fn test_retain_sessions_empty_bridge_is_noop() {
+        let mut bridge = new_bridge();
+        let removed = bridge.retain_sessions(&["sess-a", "sess-b"]);
+        assert_eq!(removed, 0);
         assert!(!bridge.has_agents());
     }
 }

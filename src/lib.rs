@@ -81,6 +81,14 @@ impl ZellijPlugin for ZellaiPlugin {
                 ]);
                 run_command(&["ls", "-1", &sessions_dir], context);
 
+                // Get current epoch time for stale detection
+                run_command(
+                    &["date", "+%s"],
+                    BTreeMap::from([
+                        ("zellai_cmd".to_string(), "get_time".to_string()),
+                    ]),
+                );
+
                 false // don't re-render yet; wait for RunCommandResult
             }
             Event::RunCommandResult(exit_code, stdout, stderr, context) => {
@@ -137,6 +145,17 @@ impl ZellaiPlugin {
                     .cloned()
                     .unwrap_or_else(|| self.bridge.sessions_dir().to_string());
 
+                // Collect session IDs from .json filenames for cleanup
+                let session_ids: Vec<&str> = stdout_str
+                    .lines()
+                    .map(|l| l.trim())
+                    .filter(|f| !f.is_empty() && f.ends_with(".json"))
+                    .filter_map(|f| f.strip_suffix(".json"))
+                    .collect();
+
+                // Remove sessions whose files no longer exist on disk
+                self.bridge.retain_sessions(&session_ids);
+
                 for line in stdout_str.lines() {
                     let filename = line.trim();
                     if filename.is_empty() || !filename.ends_with(".json") {
@@ -168,6 +187,16 @@ impl ZellaiPlugin {
                     self.bridge.remove_session(session_id);
                 }
                 true // trigger re-render
+            }
+            "get_time" => {
+                if exit_code == Some(0) {
+                    let stdout_str = String::from_utf8_lossy(&stdout);
+                    if let Ok(epoch) = stdout_str.trim().parse::<u64>() {
+                        self.bridge.mark_stale(epoch);
+                        return true; // re-render to reflect staleness changes
+                    }
+                }
+                false
             }
             _ => false,
         }
