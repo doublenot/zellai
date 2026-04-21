@@ -7,14 +7,19 @@ description = "A Zellij plugin for managing AI coding agents"
 license = "MIT"
 
 [lib]
-# Zellij plugins are loaded as WASM — the crate type must be cdylib
-crate-type = ["cdylib"]
+# cdylib for the Zellij WASM plugin; rlib so the native CLI binary can link the library
+crate-type = ["cdylib", "rlib"]
+
+[[bin]]
+name = "zellai"
+path = "src/bin/zellai.rs"
 
 [dependencies]
 zellij-tile = "0.44.1"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 toml = "0.8"
+clap = { version = "4", features = ["derive"] }
 
 [dev-dependencies]
 serde_json = "1.0"

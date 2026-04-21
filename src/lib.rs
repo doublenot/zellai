@@ -1,4 +1,6 @@
+#[cfg(target_arch = "wasm32")]
 use std::collections::BTreeMap;
+#[cfg(target_arch = "wasm32")]
 use zellij_tile::prelude::*;
 
 pub mod attention;
@@ -11,12 +13,14 @@ pub mod status_bridge;
 // mod workspace;
 // mod teams;
 
+#[cfg(target_arch = "wasm32")]
 struct ZellaiPlugin {
     bridge: status_bridge::StatusBridge,
     config: config::ZellaiConfig,
     attention: attention::AttentionTracker,
 }
 
+#[cfg(target_arch = "wasm32")]
 impl Default for ZellaiPlugin {
     fn default() -> Self {
         let cfg = config::ZellaiConfig::default();
@@ -32,8 +36,10 @@ impl Default for ZellaiPlugin {
     }
 }
 
+#[cfg(target_arch = "wasm32")]
 register_plugin!(ZellaiPlugin);
 
+#[cfg(target_arch = "wasm32")]
 impl ZellijPlugin for ZellaiPlugin {
     fn load(&mut self, configuration: BTreeMap<String, String>) {
         // Parse configuration from the plugin's configuration BTreeMap.
@@ -120,6 +126,7 @@ impl ZellijPlugin for ZellaiPlugin {
     }
 }
 
+#[cfg(target_arch = "wasm32")]
 impl ZellaiPlugin {
     fn handle_run_command_result(
         &mut self,
