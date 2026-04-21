@@ -1,3 +1,5 @@
+mod init;
+
 use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
@@ -14,15 +16,21 @@ struct Cli {
 #[derive(Subcommand)]
 enum Commands {
     /// Initialize zellai hooks for the current project
-    Init,
+    Init {
+        /// Overwrite existing hook files even if not managed by zellai
+        #[arg(long)]
+        force: bool,
+    },
 }
 
 fn main() {
     let cli = Cli::parse();
     match cli.command {
-        Commands::Init => {
-            println!("zellai init: not yet implemented");
-            std::process::exit(1);
+        Commands::Init { force } => {
+            if let Err(msg) = init::run(force) {
+                eprintln!("{msg}");
+                std::process::exit(1);
+            }
         }
     }
 }

@@ -12,7 +12,7 @@ crate-type = ["cdylib", "rlib"]
 
 [[bin]]
 name = "zellai"
-path = "src/bin/zellai.rs"
+path = "src/bin/zellai/main.rs"
 
 [dependencies]
 zellij-tile = "0.44.1"
