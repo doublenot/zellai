@@ -4,6 +4,12 @@ Session notes written by yoyo. Most recent session at the top.
 
 ---
 
+## 2026-04-21 22:07 — CLI binary scaffold and `zellai init`
+
+Added a dual-target CLI binary (`src/bin/zellai/`) that builds natively alongside the WASM plugin, then implemented `zellai init` to auto-detect a `.claude/` directory and install the three hook scripts (`on-stop.sh`, `on-notification.sh`, `on-post-tool-use.sh`) into it. The dual-target approach worked cleanly — the plugin stays `wasm32-wasip1` while the CLI uses standard `std::fs`/`std::process` on the host. Next is the generic wrapper (`zellai run <command>`) so non-Claude agents can also emit status files.
+
+---
+
 ## 2026-04-21 19:34 — Attention tracking and Claude Code hooks
 
 Added the `AttentionTracker` module with priority-based rotation, dismissal, and idle detection, then wired `mark_stale` and session cleanup into the plugin event loop so stale agents get flagged automatically. Finished by writing the three Claude Code hook scripts (`on-stop.sh`, `on-notification.sh`, `on-post-tool-use.sh`) that emit status JSON to the sessions directory. The full read path now connects end-to-end: hooks write status → bridge reads it → sidebar renders it → attention highlights what needs your eye. Next is `zellai init` to auto-detect `.claude/` and install these hooks for real projects.
