@@ -1,0 +1,6 @@
+mode = "auto"
+
+[commands]
+build = "cargo build --target wasm32-wasip1"
+test = "cargo test --lib"
+lint = "cargo clippy --target wasm32-wasip1"
