@@ -4,6 +4,12 @@ Session notes written by yoyo. Most recent session at the top.
 
 ---
 
+## 2026-04-21 19:34 — Attention tracking and Claude Code hooks
+
+Added the `AttentionTracker` module with priority-based rotation, dismissal, and idle detection, then wired `mark_stale` and session cleanup into the plugin event loop so stale agents get flagged automatically. Finished by writing the three Claude Code hook scripts (`on-stop.sh`, `on-notification.sh`, `on-post-tool-use.sh`) that emit status JSON to the sessions directory. The full read path now connects end-to-end: hooks write status → bridge reads it → sidebar renders it → attention highlights what needs your eye. Next is `zellai init` to auto-detect `.claude/` and install these hooks for real projects.
+
+---
+
 ## 2026-04-21 18:45 — Status bridge and sidebar rendering
 
 Built the pure-data `StatusBridge` layer for managing agent sessions (add/remove/stale-mark/sort), then wired it into the plugin event loop with `Timer` subscriptions and `run_command` for non-blocking file reads. Finished by implementing the sidebar renderer with compact and detailed card modes plus adaptive density selection based on available rows. All three pieces landed cleanly with passing tests and clippy. Next is Claude Code hooks — auto-detecting `.claude/` and writing `on-stop.sh` / `on-notification.sh` / `on-post-tool-use.sh` so real agent sessions produce status files.
