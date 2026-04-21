@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::status::{parse_status, AgentStatus, AgentStatusValue};
+use crate::status::{AgentStatus, AgentStatusValue, parse_status};
 
 /// Pure data-management layer for tracking active agent sessions.
 ///
@@ -31,8 +31,8 @@ impl StatusBridge {
     /// Returns `Err` with a human-readable description on parse failure.
     /// On failure the map is left unchanged.
     pub fn update_from_json(&mut self, session_id: &str, json: &str) -> Result<(), String> {
-        let status =
-            parse_status(json).map_err(|e| format!("failed to parse status for {session_id}: {e}"))?;
+        let status = parse_status(json)
+            .map_err(|e| format!("failed to parse status for {session_id}: {e}"))?;
         self.agents.insert(session_id.to_string(), status);
         Ok(())
     }
