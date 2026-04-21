@@ -1,0 +1,17 @@
+[package]
+name = "zellai"
+version = "0.1.0"
+edition = "2024"
+authors = ["zellai contributors"]
+description = "A Zellij plugin for managing AI coding agents"
+license = "MIT"
+
+[lib]
+# Zellij plugins are loaded as WASM — the crate type must be cdylib
+crate-type = ["cdylib"]
+
+[dependencies]
+zellij-tile = "0.44.1"
+
+[dev-dependencies]
+serde_json = "1.0"
