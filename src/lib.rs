@@ -2,11 +2,11 @@ use std::collections::BTreeMap;
 use zellij_tile::prelude::*;
 
 pub mod config;
+pub mod sidebar;
 pub mod status;
 pub mod status_bridge;
 
 // Module declarations for future files (commented out until they exist)
-// mod sidebar;
 // mod attention;
 // mod workspace;
 // mod teams;
@@ -103,48 +103,11 @@ impl ZellijPlugin for ZellaiPlugin {
     }
 
     fn render(&mut self, rows: usize, cols: usize) {
-        // Top border
-        println!("╭{}╮", "─".repeat(cols.saturating_sub(2)));
-
-        if rows > 2 {
-            let title = " zellai ";
-            let padding = cols.saturating_sub(2 + title.len());
-            println!("│{}{: <width$}│", title, "", width = padding);
-        }
-
-        if self.bridge.has_agents() {
-            // Render one line per agent
-            let agents = self.bridge.agents_sorted();
-            let max_agent_rows = rows.saturating_sub(4); // reserve top border, title, gap, bottom border
-            for (i, agent) in agents.iter().enumerate() {
-                if i >= max_agent_rows {
-                    break;
-                }
-                let icon = status_icon(&agent.status);
-                let line = format!(" {} {}: {} ", icon, agent.session_id, agent.status);
-                let padding = cols.saturating_sub(2 + line.len());
-                println!("│{}{: <width$}│", line, "", width = padding);
-            }
-            // Fill remaining rows
-            let used = agents.len().min(max_agent_rows);
-            for _ in 0..max_agent_rows.saturating_sub(used) {
-                println!("│{: <width$}│", "", width = cols.saturating_sub(2));
-            }
-        } else {
-            // No agents — show placeholder
-            if rows > 3 {
-                let msg = " No agents connected ";
-                let padding = cols.saturating_sub(2 + msg.len());
-                println!("│{}{: <width$}│", msg, "", width = padding);
-            }
-            for _ in 0..rows.saturating_sub(4).min(rows) {
-                println!("│{: <width$}│", "", width = cols.saturating_sub(2));
-            }
-        }
-
-        // Bottom border
-        if rows > 1 {
-            println!("╰{}╯", "─".repeat(cols.saturating_sub(2)));
+        let agents = self.bridge.agents_sorted();
+        let agent_refs: Vec<&status::AgentStatus> = agents.into_iter().collect();
+        let lines = sidebar::render_sidebar(&agent_refs, &self.config.sidebar, rows, cols);
+        for line in lines {
+            println!("{}", line);
         }
     }
 }
@@ -208,15 +171,5 @@ impl ZellaiPlugin {
             }
             _ => false,
         }
-    }
-}
-
-/// Map agent status to a Unicode icon for display.
-fn status_icon(status: &status::AgentStatusValue) -> &'static str {
-    match status {
-        status::AgentStatusValue::Thinking => "🧠",
-        status::AgentStatusValue::Waiting => "⏳",
-        status::AgentStatusValue::Idle => "💤",
-        status::AgentStatusValue::Error => "❌",
     }
 }

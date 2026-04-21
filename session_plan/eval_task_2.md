@@ -1,0 +1,2 @@
+Verdict: PASS
+Reason: Implementation matches the task spec — bridge and config fields replace `loading`, `load()` parses TOML config, Timer handler triggers async `ls` via `run_command`, `RunCommandResult` handler correctly dispatches `list_sessions`/`read_status` commands, filesystem events return true for re-render, `render()` is non-blocking with agent list display, no forbidden APIs (std::fs/net/process), build + tests + clippy all pass.
