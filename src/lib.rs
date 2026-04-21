@@ -1,19 +1,20 @@
 use std::collections::BTreeMap;
 use zellij_tile::prelude::*;
 
+pub mod attention;
 pub mod config;
 pub mod sidebar;
 pub mod status;
 pub mod status_bridge;
 
 // Module declarations for future files (commented out until they exist)
-// mod attention;
 // mod workspace;
 // mod teams;
 
 struct ZellaiPlugin {
     bridge: status_bridge::StatusBridge,
     config: config::ZellaiConfig,
+    attention: attention::AttentionTracker,
 }
 
 impl Default for ZellaiPlugin {
@@ -26,6 +27,7 @@ impl Default for ZellaiPlugin {
         Self {
             bridge,
             config: cfg,
+            attention: attention::AttentionTracker::new(),
         }
     }
 }
@@ -84,9 +86,7 @@ impl ZellijPlugin for ZellaiPlugin {
                 // Get current epoch time for stale detection
                 run_command(
                     &["date", "+%s"],
-                    BTreeMap::from([
-                        ("zellai_cmd".to_string(), "get_time".to_string()),
-                    ]),
+                    BTreeMap::from([("zellai_cmd".to_string(), "get_time".to_string())]),
                 );
 
                 false // don't re-render yet; wait for RunCommandResult
@@ -186,6 +186,12 @@ impl ZellaiPlugin {
                     // File disappeared or is unreadable — remove from bridge
                     self.bridge.remove_session(session_id);
                 }
+
+                // Update attention tracker with current agent state
+                let agents = self.bridge.agents_sorted();
+                let agent_refs: Vec<&status::AgentStatus> = agents.into_iter().collect();
+                self.attention.update(&agent_refs);
+
                 true // trigger re-render
             }
             "get_time" => {
