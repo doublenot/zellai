@@ -3,10 +3,10 @@ use zellij_tile::prelude::*;
 
 pub mod config;
 pub mod status;
+pub mod status_bridge;
 
 // Module declarations for future files (commented out until they exist)
 // mod sidebar;
-// mod status_bridge;
 // mod attention;
 // mod workspace;
 // mod teams;
