@@ -1,6 +1,8 @@
 use std::collections::BTreeMap;
 use zellij_tile::prelude::*;
 
+pub mod status;
+
 // Module declarations for future files (commented out until they exist)
 // mod sidebar;
 // mod status_bridge;
