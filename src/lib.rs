@@ -18,6 +18,8 @@ struct ZellaiPlugin {
     bridge: status_bridge::StatusBridge,
     config: config::ZellaiConfig,
     attention: attention::AttentionTracker,
+    /// Resolved home directory (from `echo ~`); used to expand `~` in paths.
+    home_dir: Option<String>,
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -32,6 +34,7 @@ impl Default for ZellaiPlugin {
             bridge,
             config: cfg,
             attention: attention::AttentionTracker::new(),
+            home_dir: None,
         }
     }
 }
@@ -72,6 +75,13 @@ impl ZellijPlugin for ZellaiPlugin {
         // Set a periodic timer for polling status files
         let interval = self.config.bridge.poll_interval_ms as f64 / 1000.0;
         set_timeout(interval);
+
+        // Resolve the user's home directory so we can expand `~` in paths.
+        // WASM plugins cannot call std::env, so we shell out.
+        run_command(
+            &["sh", "-c", "echo ~"],
+            BTreeMap::from([("zellai_cmd".to_string(), "resolve_home".to_string())]),
+        );
     }
 
     fn update(&mut self, event: Event) -> bool {
@@ -82,7 +92,7 @@ impl ZellijPlugin for ZellaiPlugin {
                 set_timeout(interval);
 
                 // Trigger an async listing of the sessions directory
-                let sessions_dir = self.bridge.sessions_dir().to_string();
+                let sessions_dir = self.resolved_sessions_dir();
                 let context = BTreeMap::from([
                     ("zellai_cmd".to_string(), "list_sessions".to_string()),
                     ("sessions_dir".to_string(), sessions_dir.clone()),
@@ -150,7 +160,7 @@ impl ZellaiPlugin {
                 let sessions_dir = context
                     .get("sessions_dir")
                     .cloned()
-                    .unwrap_or_else(|| self.bridge.sessions_dir().to_string());
+                    .unwrap_or_else(|| self.resolved_sessions_dir());
 
                 // Collect session IDs from .json filenames for cleanup
                 let session_ids: Vec<&str> = stdout_str
@@ -211,7 +221,30 @@ impl ZellaiPlugin {
                 }
                 false
             }
+            "resolve_home" => {
+                if exit_code == Some(0) {
+                    let home = String::from_utf8_lossy(&stdout).trim().to_string();
+                    if !home.is_empty() {
+                        self.home_dir = Some(home);
+                    }
+                }
+                false
+            }
             _ => false,
         }
+    }
+
+    /// Return the sessions directory with `~` expanded to the resolved home path.
+    ///
+    /// If the home directory hasn't been resolved yet (the `resolve_home` command
+    /// hasn't returned), returns the raw configured path unchanged.
+    fn resolved_sessions_dir(&self) -> String {
+        let raw = self.bridge.sessions_dir().to_string();
+        if let Some(ref home) = self.home_dir
+            && let Some(rest) = raw.strip_prefix('~')
+        {
+            return format!("{}{}", home, rest);
+        }
+        raw
     }
 }
