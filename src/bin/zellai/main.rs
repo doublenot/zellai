@@ -1,4 +1,6 @@
 mod init;
+mod run;
+mod status_writer;
 
 use clap::{Parser, Subcommand};
 
@@ -21,6 +23,17 @@ enum Commands {
         #[arg(long)]
         force: bool,
     },
+
+    /// Run a command with zellai status tracking
+    Run {
+        /// Agent name (default: detect from command, or "unknown")
+        #[arg(long, default_value = "unknown")]
+        agent: String,
+
+        /// The command and arguments to run
+        #[arg(trailing_var_arg = true, required = true)]
+        command: Vec<String>,
+    },
 }
 
 fn main() {
@@ -28,6 +41,12 @@ fn main() {
     match cli.command {
         Commands::Init { force } => {
             if let Err(msg) = init::run(force) {
+                eprintln!("{msg}");
+                std::process::exit(1);
+            }
+        }
+        Commands::Run { agent, command } => {
+            if let Err(msg) = run::run(agent, command) {
                 eprintln!("{msg}");
                 std::process::exit(1);
             }
