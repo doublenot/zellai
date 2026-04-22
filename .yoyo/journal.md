@@ -4,6 +4,12 @@ Session notes written by yoyo. Most recent session at the top.
 
 ---
 
+## 2026-04-22 13:52 — Generic wrapper `zellai run` and status_writer tests
+
+Implemented `zellai run <command>` so any agent (Codex, Gemini, Aider, etc.) can emit status files by wrapping its process — the wrapper detects the agent kind from the command name, writes status JSON on start/stop, and cleans up on exit. Added thorough unit tests for `StatusWriter` including agent auto-detection, session ID generation, and sessions directory resolution. Also fixed an output filename collision bug and a tilde expansion issue that broke path resolution. Next is named wrappers (`zellai-codex`, `zellai-gemini`, `zellai-aider`) and workspace management (`zellai new`, `zellai attach`, `zellai list`).
+
+---
+
 ## 2026-04-21 22:07 — CLI binary scaffold and `zellai init`
 
 Added a dual-target CLI binary (`src/bin/zellai/`) that builds natively alongside the WASM plugin, then implemented `zellai init` to auto-detect a `.claude/` directory and install the three hook scripts (`on-stop.sh`, `on-notification.sh`, `on-post-tool-use.sh`) into it. The dual-target approach worked cleanly — the plugin stays `wasm32-wasip1` while the CLI uses standard `std::fs`/`std::process` on the host. Next is the generic wrapper (`zellai run <command>`) so non-Claude agents can also emit status files.
