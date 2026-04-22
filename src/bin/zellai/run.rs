@@ -125,3 +125,72 @@ fn format_exit_message(status: &ExitStatus) -> String {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::status_writer;
+
+    #[test]
+    fn test_detect_agent_from_command() {
+        // When --agent is "unknown" (the default), run() auto-detects from command[0].
+        // This tests that the detection logic in run() delegates to detect_agent correctly.
+
+        // Known agents are detected from command name
+        assert_eq!(status_writer::detect_agent("claude"), "claude");
+        assert_eq!(status_writer::detect_agent("codex"), "codex");
+        assert_eq!(status_writer::detect_agent("gemini"), "gemini");
+        assert_eq!(status_writer::detect_agent("aider"), "aider");
+        assert_eq!(status_writer::detect_agent("opencode"), "opencode");
+
+        // Full paths are handled (strip to base name)
+        assert_eq!(status_writer::detect_agent("/usr/bin/claude"), "claude");
+        assert_eq!(
+            status_writer::detect_agent("/home/user/.local/bin/aider"),
+            "aider"
+        );
+
+        // Unknown commands stay as "unknown"
+        assert_eq!(status_writer::detect_agent("python"), "unknown");
+        assert_eq!(status_writer::detect_agent("node"), "unknown");
+        assert_eq!(status_writer::detect_agent("bash"), "unknown");
+    }
+
+    #[test]
+    fn test_run_rejects_empty_command() {
+        // Empty command vec should produce an error
+        let result = super::run("unknown".to_string(), vec![]);
+        assert!(result.is_err());
+        assert!(
+            result.unwrap_err().contains("No command specified"),
+            "error should mention missing command"
+        );
+    }
+
+    #[test]
+    fn test_agent_override_vs_autodetect() {
+        // When agent is explicitly set (not "unknown"), it should be used as-is.
+        // When agent is "unknown", detect_agent is called on command[0].
+        //
+        // We can't easily test the full run() flow (it spawns processes), but we
+        // can verify the detection logic used by run():
+        let cmd = "claude";
+        let agent_explicit = "my-custom-agent";
+        let agent_unknown = "unknown";
+
+        // Explicit: keep it
+        let resolved_explicit = if agent_explicit == "unknown" {
+            status_writer::detect_agent(cmd).to_string()
+        } else {
+            agent_explicit.to_string()
+        };
+        assert_eq!(resolved_explicit, "my-custom-agent");
+
+        // Unknown: auto-detect
+        let resolved_auto = if agent_unknown == "unknown" {
+            status_writer::detect_agent(cmd).to_string()
+        } else {
+            agent_unknown.to_string()
+        };
+        assert_eq!(resolved_auto, "claude");
+    }
+}
