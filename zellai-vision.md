@@ -105,11 +105,12 @@ zellai runs anywhere Zellij runs: local machines, remote servers over SSH, Docke
 - Custom layouts: define pane count, agent type, and initial prompt per pane
 - Orchestrator + worker topology
 - Orchestrator Task Board (optional): dedicated pane view for task-level state across the active team
-- Task Board views: Kanban (`TODO | IN-PROGRESS | REVIEW | DONE | BLOCKED`) and dependency-aware DAG tree (ASCII, level-grouped)
-- Task metadata: assigned agent pane, git branch, last activity timestamp
+- Task Board views: Kanban (`todo | in-progress | review | done | blocked`) and dependency-aware DAG tree (ASCII, level-grouped)
+- Task metadata: assigned pane identifier (index or name), git branch, last activity timestamp
 - Aggregate Task Board stats: total tasks, success rate, optional cost/token consumption
 - Task Board is configurable: dedicated pane, or disabled entirely
-- Dependency visualization does not enforce execution order; zellai surfaces state and the orchestrator agent decides logic
+- DAG dependencies are surfaced as task relationships for visibility in the Task Board
+- Dependency enforcement is delegated to the orchestrator agent, so tasks may execute before dependencies are complete
 - Broadcast mode: send the same prompt to all agent panes at once via Zellij pipes
 - Targeted message send: send a structured message to a specific agent pane by index or name without switching focus
 - Future: session Messages view in orchestrator pane with send/receive history
@@ -119,7 +120,7 @@ zellai runs anywhere Zellij runs: local machines, remote servers over SSH, Docke
 - Generic wrapper: `zellai run <agent-command>`
 - Named wrappers: `zellai-claude`, `zellai-codex`, `zellai-gemini`, `zellai-aider`
 - Status schema: agent name, status, git branch, working directory, last message, ports, timestamp
-- Status files written to `~/.local/share/zellai/sessions/`
+- Status files written under `~/.local/share/zellai/sessions/` using the zellai workspace name as directory when known, otherwise a `session-<id>` directory
 - Optional per-pane structured execution log (status events, developer interactions, and tool calls when surfaced by hooks)
 - Execution logs written alongside status files at `~/.local/share/zellai/sessions/<workspace>/<pane>.log`
 - `zellai log <pane>` for per-pane session log retrieval
@@ -205,7 +206,7 @@ show_cost_tracking = false
 dag_view = true
 ```
 
-Within this panel, users can switch between Kanban and DAG views (for example via `Tab`). DAG mode is an ASCII dependency tree grouped by dependency level and status, optimized for terminal constraints rather than full graph rendering.
+Within this panel, users can switch between Kanban and DAG views via a configurable keybinding. DAG mode is an ASCII dependency tree organized by dependency level, measured as tree depth from root tasks with no dependencies. It also applies secondary grouping by status and is optimized for terminal constraints rather than full graph rendering.
 
 ## What zellai Is Not
 
