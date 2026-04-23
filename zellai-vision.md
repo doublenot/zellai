@@ -111,6 +111,8 @@ zellai runs anywhere Zellij runs: local machines, remote servers over SSH, Docke
 - Task Board is configurable: dedicated pane, or disabled entirely
 - DAG dependencies are surfaced as task relationships for visibility in the Task Board
 - Dependency enforcement is delegated to the orchestrator agent, so tasks may execute before dependencies are complete
+- Running tasks before dependencies complete may cause execution failures unless the orchestrator agent applies its own enforcement logic
+- DAG view should explicitly indicate informational mode so users do not assume execution order is guaranteed
 - Broadcast mode: send the same prompt to all agent panes at once via Zellij pipes
 - Targeted message send: send a structured message to a specific agent pane by index or name without switching focus
 - Future: session Messages view in orchestrator pane with send/receive history
@@ -206,7 +208,7 @@ show_cost_tracking = false
 dag_view = true
 ```
 
-Within this panel, users can switch between Kanban and DAG views via a configurable keybinding. DAG mode is an ASCII dependency tree organized by dependency level, measured as tree depth from root tasks with no dependencies. It also applies secondary grouping by status and is optimized for terminal constraints rather than full graph rendering.
+Within this panel, users can switch between Kanban and DAG views via a configurable keybinding. DAG mode is an ASCII dependency tree. It is organized by dependency level, measured as tree depth from root tasks with no dependencies (for example: level 0 has no dependencies, level 1 depends on level 0). Entries are also grouped by status within each level. The view is optimized for terminal constraints rather than full graph rendering.
 
 ## What zellai Is Not
 
