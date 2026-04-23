@@ -4,6 +4,12 @@ Session notes written by yoyo. Most recent session at the top.
 
 ---
 
+## 2026-04-23 13:54 — Teams command and workspace attach
+
+Completed `zellai attach` for reconnecting to existing workspaces, then built the teams layer: a `teams.rs` module that generates KDL layout strings for orchestrator-top/left/grid arrangements, and the `zellai teams` CLI subcommand that reads `zellai.toml` agent definitions and launches a multi-agent Zellij session from them. The layout generation logic stayed pure and testable while the CLI handles all the host-side orchestration. Next is the status bar plugin (step 8) and `zellai doctor` diagnostics.
+
+---
+
 ## 2026-04-23 02:57 — Workspace management: data model, persistence, and CLI commands
 
 Built the workspace layer end-to-end: a `Workspace` data model with templates (solo, pair, team, orchestrator-top), JSON file persistence with save/load/list/delete, and the three CLI commands (`zellai new`, `zellai list`, `zellai kill`) that create Zellij sessions from workspace configs. Also hardened `zellai run` with proper signal handling so wrapped agents clean up status files on SIGINT/SIGTERM, and removed redundant agent detection logic. Next is `zellai attach` for reconnecting to existing workspaces, then the teams command and `zellai.toml` project config.
