@@ -63,6 +63,12 @@ enum Commands {
         /// Workspace name to delete
         name: String,
     },
+
+    /// Attach to (restore) a saved workspace
+    Attach {
+        /// Workspace name to restore
+        name: String,
+    },
 }
 
 fn main() {
@@ -106,8 +112,15 @@ fn main() {
                 std::process::exit(1);
             }
         }
+        #[cfg(not(target_arch = "wasm32"))]
+        Commands::Attach { name } => {
+            if let Err(msg) = workspace_cmd::cmd_attach(&name) {
+                eprintln!("{msg}");
+                std::process::exit(1);
+            }
+        }
         #[cfg(target_arch = "wasm32")]
-        Commands::New { .. } | Commands::List | Commands::Kill { .. } => {
+        Commands::New { .. } | Commands::List | Commands::Kill { .. } | Commands::Attach { .. } => {
             eprintln!("workspace commands are not available in WASM builds");
             std::process::exit(1);
         }
