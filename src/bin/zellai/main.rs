@@ -2,6 +2,8 @@ mod init;
 mod run;
 mod status_writer;
 #[cfg(not(target_arch = "wasm32"))]
+mod teams_cmd;
+#[cfg(not(target_arch = "wasm32"))]
 mod workspace_cmd;
 
 use clap::{Parser, Subcommand};
@@ -69,6 +71,17 @@ enum Commands {
         /// Workspace name to restore
         name: String,
     },
+
+    /// Launch a multi-agent team layout
+    Teams {
+        /// Layout override (orchestrator-top, orchestrator-left, equal-grid)
+        #[arg(long)]
+        layout: Option<String>,
+
+        /// Working directory (default: current directory)
+        #[arg(long)]
+        dir: Option<String>,
+    },
 }
 
 fn main() {
@@ -119,8 +132,19 @@ fn main() {
                 std::process::exit(1);
             }
         }
+        #[cfg(not(target_arch = "wasm32"))]
+        Commands::Teams { layout, dir } => {
+            if let Err(msg) = teams_cmd::cmd_teams(layout.as_deref(), dir.as_deref()) {
+                eprintln!("{msg}");
+                std::process::exit(1);
+            }
+        }
         #[cfg(target_arch = "wasm32")]
-        Commands::New { .. } | Commands::List | Commands::Kill { .. } | Commands::Attach { .. } => {
+        Commands::New { .. }
+        | Commands::List
+        | Commands::Kill { .. }
+        | Commands::Attach { .. }
+        | Commands::Teams { .. } => {
             eprintln!("workspace commands are not available in WASM builds");
             std::process::exit(1);
         }
