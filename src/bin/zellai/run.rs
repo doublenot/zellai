@@ -34,6 +34,9 @@ pub fn run(agent: String, command: Vec<String>) -> Result<(), String> {
         agent
     };
 
+    // Clone agent name before moving it into StatusWriter — the background thread needs it too
+    let bg_agent_name = agent.clone();
+
     let writer = StatusWriter::new(session_id.clone(), agent, sessions_dir);
 
     // Create sessions directory
@@ -49,6 +52,18 @@ pub fn run(agent: String, command: Vec<String>) -> Result<(), String> {
     writer
         .write_status("thinking", None, false)
         .map_err(|e| format!("Failed to write initial status: {e}"))?;
+
+    // Set up signal handler to catch Ctrl-C so we can write final status before exiting.
+    // The ctrlc crate is only available on native targets (not WASM).
+    let interrupted = Arc::new(AtomicBool::new(false));
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let interrupted_clone = Arc::clone(&interrupted);
+        ctrlc::set_handler(move || {
+            interrupted_clone.store(true, Ordering::SeqCst);
+        })
+        .map_err(|e| format!("Failed to set signal handler: {e}"))?;
+    }
 
     // Spawn the child process
     let mut child = Command::new(&command[0])
@@ -68,12 +83,6 @@ pub fn run(agent: String, command: Vec<String>) -> Result<(), String> {
     // Clone what the background thread needs
     let bg_session_id = writer.session_id().to_string();
     let bg_sessions_dir = writer.status_file_path().parent().unwrap().to_path_buf();
-    let bg_agent = command[0].clone();
-    let bg_agent_name = if status_writer::detect_agent(&bg_agent) != "unknown" {
-        status_writer::detect_agent(&bg_agent).to_string()
-    } else {
-        "unknown".to_string()
-    };
 
     let bg_thread = thread::spawn(move || {
         let bg_writer = StatusWriter::new(bg_session_id, bg_agent_name, bg_sessions_dir);
@@ -97,8 +106,12 @@ pub fn run(agent: String, command: Vec<String>) -> Result<(), String> {
         format!("Failed to wait for child process: {e}")
     })?;
 
-    // Write final status with exit info
-    let exit_message = format_exit_message(&exit_status);
+    // Write final status — mention interruption if Ctrl-C was caught
+    let exit_message = if interrupted.load(Ordering::SeqCst) {
+        "Interrupted by signal".to_string()
+    } else {
+        format_exit_message(&exit_status)
+    };
     let _ = writer.write_status("idle", Some(&exit_message), false);
 
     // Clean up the status file
