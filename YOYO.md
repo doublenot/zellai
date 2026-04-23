@@ -58,7 +58,7 @@ zellij plugin --configuration key=value -- file:target/wasm32-wasip1/debug/zella
 ## Directory Structure
 
 ```
-zellai-vision.md        # founding vision (immutable — do not modify)
+zellai-vision.md        # product vision
 YOYO.md                 # this file (project context)
 SCHEMA.md               # plugin architecture, status schema, config schema
 src/

@@ -104,7 +104,15 @@ zellai runs anywhere Zellij runs: local machines, remote servers over SSH, Docke
 - `zellai.toml` — project-level team and workspace configuration
 - Custom layouts: define pane count, agent type, and initial prompt per pane
 - Orchestrator + worker topology
-- Broadcast mode: send the same prompt to all agent panes at once
+- Orchestrator Task Board (optional): dedicated pane view for task-level state across the active team
+- Task Board views: Kanban (`TODO | IN-PROGRESS | REVIEW | DONE | BLOCKED`) and dependency-aware DAG tree (ASCII, level-grouped)
+- Task metadata: assigned agent pane, git branch, last activity timestamp
+- Aggregate Task Board stats: total tasks, success rate, optional cost/token consumption
+- Task Board is configurable: dedicated pane, or disabled entirely
+- Dependency visualization does not enforce execution order; zellai surfaces state and the orchestrator agent decides logic
+- Broadcast mode: send the same prompt to all agent panes at once via Zellij pipes
+- Targeted message send: send a structured message to a specific agent pane by index or name without switching focus
+- Future: session Messages view in orchestrator pane with send/receive history
 
 ### Status Bridge
 - Claude Code native hook integration (Stop, Notification, PostToolUse)
@@ -112,12 +120,16 @@ zellai runs anywhere Zellij runs: local machines, remote servers over SSH, Docke
 - Named wrappers: `zellai-claude`, `zellai-codex`, `zellai-gemini`, `zellai-aider`
 - Status schema: agent name, status, git branch, working directory, last message, ports, timestamp
 - Status files written to `~/.local/share/zellai/sessions/`
+- Optional per-pane structured execution log (status events, developer interactions, and tool calls when surfaced by hooks)
+- Execution logs written alongside status files at `~/.local/share/zellai/sessions/<workspace>/<pane>.log`
+- `zellai log <pane>` for per-pane session log retrieval
 - Future: in-band Zellij pipe bridge for event-driven, zero-polling updates
 
 ### Keyboard Navigation
 - Jump to any agent pane by index or name
 - Cycle through panes needing attention with a single key
 - Dismiss notifications without switching panes
+- Toggle focus between orchestrator Task Board pane and agent panes
 - Workspace-level keybindings configurable in `zellai.toml`
 
 ### Status Bar Integration
@@ -182,6 +194,18 @@ Alternative layouts — orchestrator left, equal grid — are available via `zel
 [teams]
 default_layout = "orchestrator-top"   # orchestrator-top | orchestrator-left | equal-grid | custom
 ```
+
+The orchestrator pane can optionally host a dedicated Task Board panel. The Task Board can be disabled entirely, or enabled with configurable columns and optional cost tracking:
+
+```toml
+[teams.orchestrator]
+task_board = true
+task_board_columns = ["todo", "in-progress", "review", "done", "blocked"]
+show_cost_tracking = false
+dag_view = true
+```
+
+Within this panel, users can switch between Kanban and DAG views (for example via `Tab`). DAG mode is an ASCII dependency tree grouped by dependency level and status, optimized for terminal constraints rather than full graph rendering.
 
 ## What zellai Is Not
 
