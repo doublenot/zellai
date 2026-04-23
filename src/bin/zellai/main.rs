@@ -1,3 +1,4 @@
+mod doctor;
 mod init;
 mod run;
 mod status_writer;
@@ -82,6 +83,9 @@ enum Commands {
         #[arg(long)]
         dir: Option<String>,
     },
+
+    /// Check environment and diagnose issues
+    Doctor,
 }
 
 fn main() {
@@ -147,6 +151,12 @@ fn main() {
         | Commands::Teams { .. } => {
             eprintln!("workspace commands are not available in WASM builds");
             std::process::exit(1);
+        }
+        Commands::Doctor => {
+            if let Err(msg) = doctor::run() {
+                eprintln!("{msg}");
+                std::process::exit(1);
+            }
         }
     }
 }
