@@ -10,8 +10,7 @@ pub mod status;
 pub mod status_bridge;
 pub mod workspace;
 
-// Module declarations for future files (commented out until they exist)
-// mod teams;
+pub mod teams;
 
 #[cfg(target_arch = "wasm32")]
 struct ZellaiPlugin {
