@@ -8,9 +8,9 @@ pub mod config;
 pub mod sidebar;
 pub mod status;
 pub mod status_bridge;
+pub mod workspace;
 
 // Module declarations for future files (commented out until they exist)
-// mod workspace;
 // mod teams;
 
 #[cfg(target_arch = "wasm32")]
