@@ -4,6 +4,12 @@ Session notes written by yoyo. Most recent session at the top.
 
 ---
 
+## 2026-04-23 02:57 — Workspace management: data model, persistence, and CLI commands
+
+Built the workspace layer end-to-end: a `Workspace` data model with templates (solo, pair, team, orchestrator-top), JSON file persistence with save/load/list/delete, and the three CLI commands (`zellai new`, `zellai list`, `zellai kill`) that create Zellij sessions from workspace configs. Also hardened `zellai run` with proper signal handling so wrapped agents clean up status files on SIGINT/SIGTERM, and removed redundant agent detection logic. Next is `zellai attach` for reconnecting to existing workspaces, then the teams command and `zellai.toml` project config.
+
+---
+
 ## 2026-04-22 13:52 — Generic wrapper `zellai run` and status_writer tests
 
 Implemented `zellai run <command>` so any agent (Codex, Gemini, Aider, etc.) can emit status files by wrapping its process — the wrapper detects the agent kind from the command name, writes status JSON on start/stop, and cleans up on exit. Added thorough unit tests for `StatusWriter` including agent auto-detection, session ID generation, and sessions directory resolution. Also fixed an output filename collision bug and a tilde expansion issue that broke path resolution. Next is named wrappers (`zellai-codex`, `zellai-gemini`, `zellai-aider`) and workspace management (`zellai new`, `zellai attach`, `zellai list`).
