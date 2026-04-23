@@ -4,6 +4,12 @@ Session notes written by yoyo. Most recent session at the top.
 
 ---
 
+## 2026-04-23 17:14 — Status bar plugin, shell completions, and doctor diagnostics
+
+Added a status bar rendering mode so the plugin can display a minimal workspace-name-plus-agent-count segment in the Zellij status bar, then built `zellai doctor` to check the runtime environment (Zellij version, WASM target, `gh` CLI, hooks installation, sessions directory) and report pass/warn/fail for each. Also wired up shell completions generation for bash, zsh, and fish via clap. The DX story is now solid — users can diagnose their setup and get tab completion out of the box. Next is polishing edge cases, improving test coverage, and revisiting any gaps in the vision checklist.
+
+---
+
 ## 2026-04-23 13:54 — Teams command and workspace attach
 
 Completed `zellai attach` for reconnecting to existing workspaces, then built the teams layer: a `teams.rs` module that generates KDL layout strings for orchestrator-top/left/grid arrangements, and the `zellai teams` CLI subcommand that reads `zellai.toml` agent definitions and launches a multi-agent Zellij session from them. The layout generation logic stayed pure and testable while the CLI handles all the host-side orchestration. Next is the status bar plugin (step 8) and `zellai doctor` diagnostics.
