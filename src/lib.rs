@@ -7,10 +7,23 @@ pub mod attention;
 pub mod config;
 pub mod sidebar;
 pub mod status;
+pub mod status_bar;
 pub mod status_bridge;
 pub mod workspace;
 
 pub mod teams;
+
+/// Plugin rendering mode — determined by the `mode` key in the Zellij plugin
+/// configuration BTreeMap.
+#[cfg(target_arch = "wasm32")]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+enum PluginMode {
+    /// Full sidebar rendering (default).
+    #[default]
+    Sidebar,
+    /// Minimal single-line status bar segment.
+    StatusBar,
+}
 
 #[cfg(target_arch = "wasm32")]
 struct ZellaiPlugin {
@@ -19,6 +32,10 @@ struct ZellaiPlugin {
     attention: attention::AttentionTracker,
     /// Resolved home directory (from `echo ~`); used to expand `~` in paths.
     home_dir: Option<String>,
+    /// Rendering mode: sidebar (default) or status-bar.
+    mode: PluginMode,
+    /// Workspace name shown in the status bar segment.
+    workspace_name: String,
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -34,6 +51,8 @@ impl Default for ZellaiPlugin {
             config: cfg,
             attention: attention::AttentionTracker::new(),
             home_dir: None,
+            mode: PluginMode::default(),
+            workspace_name: "zellai".to_string(),
         }
     }
 }
@@ -44,6 +63,22 @@ register_plugin!(ZellaiPlugin);
 #[cfg(target_arch = "wasm32")]
 impl ZellijPlugin for ZellaiPlugin {
     fn load(&mut self, configuration: BTreeMap<String, String>) {
+        // Parse plugin mode from configuration BTreeMap.
+        // Default is "sidebar"; "status-bar" switches to status bar mode.
+        if let Some(mode_str) = configuration.get("mode") {
+            match mode_str.as_str() {
+                "status-bar" => self.mode = PluginMode::StatusBar,
+                _ => self.mode = PluginMode::Sidebar,
+            }
+        }
+
+        // Parse optional workspace name for the status bar segment.
+        if let Some(name) = configuration.get("workspace")
+            && !name.is_empty()
+        {
+            self.workspace_name = name.clone();
+        }
+
         // Parse configuration from the plugin's configuration BTreeMap.
         // Look for a "config" key containing TOML; fall back to defaults.
         if let Some(toml_str) = configuration.get("config")
@@ -128,9 +163,20 @@ impl ZellijPlugin for ZellaiPlugin {
     fn render(&mut self, rows: usize, cols: usize) {
         let agents = self.bridge.agents_sorted();
         let agent_refs: Vec<&status::AgentStatus> = agents.into_iter().collect();
-        let lines = sidebar::render_sidebar(&agent_refs, &self.config.sidebar, rows, cols);
-        for line in lines {
-            println!("{}", line);
+
+        match self.mode {
+            PluginMode::Sidebar => {
+                let lines =
+                    sidebar::render_sidebar(&agent_refs, &self.config.sidebar, rows, cols);
+                for line in lines {
+                    println!("{}", line);
+                }
+            }
+            PluginMode::StatusBar => {
+                let line =
+                    status_bar::render_status_bar(&agent_refs, &self.workspace_name, cols);
+                print!("{}", line);
+            }
         }
     }
 }
