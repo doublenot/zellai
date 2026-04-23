@@ -198,10 +198,7 @@ mod persistence {
     }
 
     /// Internal helper: resolve workspaces dir with explicit env values for testing.
-    fn resolve_workspaces_dir_with(
-        zellai_data_dir: Option<&str>,
-        home: Option<&str>,
-    ) -> PathBuf {
+    fn resolve_workspaces_dir_with(zellai_data_dir: Option<&str>, home: Option<&str>) -> PathBuf {
         if let Some(data_dir) = zellai_data_dir {
             return PathBuf::from(data_dir).join("workspaces");
         }
@@ -224,8 +221,7 @@ mod persistence {
         let tmp_path = dir.join(format!("{}.json.tmp", workspace.name));
         let final_path = dir.join(format!("{}.json", workspace.name));
 
-        fs::write(&tmp_path, &json)
-            .map_err(|e| format!("failed to write temp file: {e}"))?;
+        fs::write(&tmp_path, &json).map_err(|e| format!("failed to write temp file: {e}"))?;
         fs::rename(&tmp_path, &final_path)
             .map_err(|e| format!("failed to rename temp file: {e}"))?;
 
@@ -245,8 +241,8 @@ mod persistence {
 
         let content =
             fs::read_to_string(&path).map_err(|e| format!("failed to read workspace file: {e}"))?;
-        let workspace: Workspace =
-            serde_json::from_str(&content).map_err(|e| format!("failed to parse workspace: {e}"))?;
+        let workspace: Workspace = serde_json::from_str(&content)
+            .map_err(|e| format!("failed to parse workspace: {e}"))?;
 
         Ok(workspace)
     }
@@ -521,13 +517,18 @@ mod tests {
         fn test_save_load_lifecycle() {
             let test_dir = make_test_dir();
 
-            let ws = from_template("lifecycle-test", WorkspaceTemplate::SingleAgent, "/tmp/proj");
+            let ws = from_template(
+                "lifecycle-test",
+                WorkspaceTemplate::SingleAgent,
+                "/tmp/proj",
+            );
 
             // Save
             save_workspace_to(&ws, &test_dir).expect("save should succeed");
 
             // Load
-            let loaded = load_workspace_from("lifecycle-test", &test_dir).expect("load should succeed");
+            let loaded =
+                load_workspace_from("lifecycle-test", &test_dir).expect("load should succeed");
             assert_eq!(loaded.name, "lifecycle-test");
             assert_eq!(loaded.panes.len(), 1);
             assert_eq!(loaded, ws);
@@ -578,7 +579,11 @@ mod tests {
 
             // Verify it's gone
             assert!(load_workspace_from("to-delete", &test_dir).is_err());
-            assert!(!list_workspaces_in(&test_dir).unwrap().contains(&"to-delete".to_string()));
+            assert!(
+                !list_workspaces_in(&test_dir)
+                    .unwrap()
+                    .contains(&"to-delete".to_string())
+            );
 
             cleanup(&test_dir);
         }

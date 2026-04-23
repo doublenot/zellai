@@ -1,6 +1,8 @@
 mod init;
 mod run;
 mod status_writer;
+#[cfg(not(target_arch = "wasm32"))]
+mod workspace_cmd;
 
 use clap::{Parser, Subcommand};
 
@@ -34,6 +36,33 @@ enum Commands {
         #[arg(trailing_var_arg = true, required = true)]
         command: Vec<String>,
     },
+
+    /// Create a new workspace
+    New {
+        /// Workspace name
+        name: String,
+
+        /// Workspace template (single-agent, team, review, research)
+        #[arg(long, default_value = "single-agent")]
+        template: String,
+
+        /// Working directory (default: current directory)
+        #[arg(long)]
+        dir: Option<String>,
+
+        /// Overwrite existing workspace
+        #[arg(long)]
+        force: bool,
+    },
+
+    /// List saved workspaces
+    List,
+
+    /// Delete a saved workspace
+    Kill {
+        /// Workspace name to delete
+        name: String,
+    },
 }
 
 fn main() {
@@ -50,6 +79,37 @@ fn main() {
                 eprintln!("{msg}");
                 std::process::exit(1);
             }
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        Commands::New {
+            name,
+            template,
+            dir,
+            force,
+        } => {
+            if let Err(msg) = workspace_cmd::cmd_new(&name, &template, dir.as_deref(), force) {
+                eprintln!("{msg}");
+                std::process::exit(1);
+            }
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        Commands::List => {
+            if let Err(msg) = workspace_cmd::cmd_list() {
+                eprintln!("{msg}");
+                std::process::exit(1);
+            }
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        Commands::Kill { name } => {
+            if let Err(msg) = workspace_cmd::cmd_kill(&name) {
+                eprintln!("{msg}");
+                std::process::exit(1);
+            }
+        }
+        #[cfg(target_arch = "wasm32")]
+        Commands::New { .. } | Commands::List | Commands::Kill { .. } => {
+            eprintln!("workspace commands are not available in WASM builds");
+            std::process::exit(1);
         }
     }
 }
