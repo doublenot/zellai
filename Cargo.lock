@@ -283,6 +283,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "clap_complete"
+version = "4.6.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3ff7a1dccbdd8b078c2bdebff47e404615151534d5043da397ec50286816f9cb"
+dependencies = [
+ "clap 4.6.1",
+]
+
+[[package]]
 name = "clap_derive"
 version = "3.2.25"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2974,6 +2983,7 @@ name = "zellai"
 version = "0.1.0"
 dependencies = [
  "clap 4.6.1",
+ "clap_complete 4.6.2",
  "ctrlc",
  "serde",
  "serde_json",
@@ -3006,7 +3016,7 @@ dependencies = [
  "backtrace",
  "bitflags 2.11.1",
  "clap 3.2.25",
- "clap_complete",
+ "clap_complete 3.2.5",
  "colored",
  "colorsys",
  "crossbeam",

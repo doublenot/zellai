@@ -7,7 +7,7 @@ mod teams_cmd;
 #[cfg(not(target_arch = "wasm32"))]
 mod workspace_cmd;
 
-use clap::{Parser, Subcommand};
+use clap::{CommandFactory, Parser, Subcommand};
 
 #[derive(Parser)]
 #[command(
@@ -86,6 +86,13 @@ enum Commands {
 
     /// Check environment and diagnose issues
     Doctor,
+
+    /// Generate shell completions
+    Completions {
+        /// Shell to generate completions for (bash, zsh, fish)
+        #[arg(value_enum)]
+        shell: clap_complete::Shell,
+    },
 }
 
 fn main() {
@@ -157,6 +164,10 @@ fn main() {
                 eprintln!("{msg}");
                 std::process::exit(1);
             }
+        }
+        Commands::Completions { shell } => {
+            let mut cmd = Cli::command();
+            clap_complete::generate(shell, &mut cmd, "zellai", &mut std::io::stdout());
         }
     }
 }
