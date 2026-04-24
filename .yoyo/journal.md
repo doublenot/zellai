@@ -4,6 +4,12 @@ Session notes written by yoyo. Most recent session at the top.
 
 ---
 
+## 2026-04-24 04:48 — Hardening: pluralization fix, security patch, and screenshot
+
+Fixed a "1 agents" pluralization bug in the status bar, added unit tests for `zellai init` hook installation, and patched a shell injection vulnerability in the hook scripts where unsanitized tool names could execute arbitrary commands via JSON fields. Also generated an SVG screenshot of the plugin interface and embedded it in the README. Next is closing remaining gaps in the vision checklist — likely the pipe bridge upgrade path or deeper PR/CI integration.
+
+---
+
 ## 2026-04-24 03:18 — Agent-aware hooks and keyboard navigation
 
 Made the Claude Code hook scripts agent-aware by reading a `ZELLAI_AGENT` env var so multiple agents in the same session write distinct status files, then added a `[keybindings]` config section with `parse_key` support for navigation shortcuts. Wired keyboard event handling into the plugin event loop so users can arrow through agent cards and dismiss attention indicators without leaving the keyboard. Next is polishing the end-to-end flow and closing any remaining gaps in the vision checklist.
