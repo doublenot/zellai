@@ -22,9 +22,7 @@ This codebase is grown by [yoyo](https://github.com/yologdev/yoyo-evolve), a sel
 
 ## Development Setup
 
-> Coming soon — yoyo will scaffold the plugin in its first growth session.
-
-Once the plugin exists:
+Clone and build:
 
 ```bash
 git clone https://github.com/doublenot/zellai.git
