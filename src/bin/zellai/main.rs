@@ -40,6 +40,31 @@ enum Commands {
         command: Vec<String>,
     },
 
+    /// Run a command as a named agent wrapper
+    ///
+    /// Explicitly sets the agent kind and runs the trailing command with status
+    /// tracking. This is the subcommand equivalent of using a `zellai-<agent>`
+    /// symlink.
+    ///
+    /// Example: zellai wrap --agent codex -- codex --model o3
+    ///
+    /// To create named wrappers, symlink the zellai binary:
+    ///   ln -s $(which zellai) ~/.local/bin/zellai-codex
+    ///   ln -s $(which zellai) ~/.local/bin/zellai-gemini
+    ///   ln -s $(which zellai) ~/.local/bin/zellai-aider
+    ///
+    /// Or use shell aliases:
+    ///   alias zellai-codex='zellai wrap --agent codex -- codex'
+    Wrap {
+        /// Agent name (required)
+        #[arg(long)]
+        agent: String,
+
+        /// The command and arguments to run
+        #[arg(trailing_var_arg = true, required = true)]
+        command: Vec<String>,
+    },
+
     /// Create a new workspace
     New {
         /// Workspace name
@@ -96,6 +121,29 @@ enum Commands {
 }
 
 fn main() {
+    // Check argv[0] for named wrapper invocation (e.g., zellai-codex, zellai-gemini).
+    // If the binary is invoked via a symlink like `zellai-codex`, we skip clap parsing
+    // and go straight to run_with_agent with the appropriate agent name.
+    if let Some(argv0) = std::env::args().next()
+        && let Some(agent) = run::extract_agent_from_argv0(&argv0)
+    {
+        let command_args: Vec<String> = std::env::args().skip(1).collect();
+
+        // If no command args provided, default to running the agent name as the command
+        // (e.g., `zellai-codex` with no args runs `codex`)
+        let command = if command_args.is_empty() {
+            vec![agent.clone()]
+        } else {
+            command_args
+        };
+
+        if let Err(msg) = run::run_with_agent(&agent, command) {
+            eprintln!("{msg}");
+            std::process::exit(1);
+        }
+        return;
+    }
+
     let cli = Cli::parse();
     match cli.command {
         Commands::Init { force } => {
@@ -106,6 +154,12 @@ fn main() {
         }
         Commands::Run { agent, command } => {
             if let Err(msg) = run::run(agent, command) {
+                eprintln!("{msg}");
+                std::process::exit(1);
+            }
+        }
+        Commands::Wrap { agent, command } => {
+            if let Err(msg) = run::run_with_agent(&agent, command) {
                 eprintln!("{msg}");
                 std::process::exit(1);
             }

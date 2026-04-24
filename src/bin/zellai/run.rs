@@ -15,6 +15,7 @@ const UPDATE_INTERVAL: Duration = Duration::from_secs(5);
 
 /// Run a command with zellai status tracking.
 ///
+/// This is the entry point for `zellai run [--agent NAME] -- <command> [args...]`.
 /// Returns `Ok(())` on success or an error message on failure.
 pub fn run(agent: String, command: Vec<String>) -> Result<(), String> {
     if command.is_empty() {
@@ -24,9 +25,6 @@ pub fn run(agent: String, command: Vec<String>) -> Result<(), String> {
         );
     }
 
-    let session_id = status_writer::generate_session_id();
-    let sessions_dir = status_writer::resolve_sessions_dir();
-
     // Auto-detect agent from command[0] if not explicitly set
     let agent = if agent == "unknown" {
         status_writer::detect_agent(&command[0]).to_string()
@@ -34,10 +32,26 @@ pub fn run(agent: String, command: Vec<String>) -> Result<(), String> {
         agent
     };
 
-    // Clone agent name before moving it into StatusWriter — the background thread needs it too
-    let bg_agent_name = agent.clone();
+    run_with_agent(&agent, command)
+}
 
-    let writer = StatusWriter::new(session_id.clone(), agent, sessions_dir);
+/// Run a command with an explicit agent name and status tracking.
+///
+/// This is the shared core used by both `zellai run` and the named wrapper path
+/// (argv\[0\] detection / `zellai wrap`). The agent name has already been resolved
+/// by the caller.
+pub fn run_with_agent(agent: &str, command: Vec<String>) -> Result<(), String> {
+    if command.is_empty() {
+        return Err("No command specified.".to_string());
+    }
+
+    let session_id = status_writer::generate_session_id();
+    let sessions_dir = status_writer::resolve_sessions_dir();
+
+    // Clone agent name before moving it into StatusWriter — the background thread needs it too
+    let bg_agent_name = agent.to_string();
+
+    let writer = StatusWriter::new(session_id.clone(), agent.to_string(), sessions_dir);
 
     // Create sessions directory
     std::fs::create_dir_all(
@@ -180,6 +194,16 @@ mod tests {
     }
 
     #[test]
+    fn test_run_with_agent_rejects_empty_command() {
+        let result = super::run_with_agent("codex", vec![]);
+        assert!(result.is_err());
+        assert!(
+            result.unwrap_err().contains("No command specified"),
+            "error should mention missing command"
+        );
+    }
+
+    #[test]
     fn test_agent_override_vs_autodetect() {
         // When agent is explicitly set (not "unknown"), it should be used as-is.
         // When agent is "unknown", detect_agent is called on command[0].
@@ -206,4 +230,61 @@ mod tests {
         };
         assert_eq!(resolved_auto, "claude");
     }
+
+    #[test]
+    fn test_extract_agent_from_argv0() {
+        // Test the argv[0] agent extraction logic
+        let cases = vec![
+            ("zellai-codex", Some("codex")),
+            ("zellai-claude", Some("claude")),
+            ("zellai-gemini", Some("gemini")),
+            ("zellai-aider", Some("aider")),
+            ("zellai-opencode", Some("opencode")),
+            ("/usr/bin/zellai-codex", Some("codex")),
+            ("/home/user/.local/bin/zellai-aider", Some("aider")),
+            ("zellai", None),
+            ("zellai-cli", None),
+            ("something-else", None),
+            ("zellai-unknown", None),
+        ];
+
+        for (argv0, expected) in cases {
+            let result = super::extract_agent_from_argv0(argv0);
+            assert_eq!(
+                result.as_deref(),
+                expected,
+                "argv0={argv0:?} expected {expected:?} got {result:?}"
+            );
+        }
+    }
+}
+
+/// Known agent names that can be used as named wrapper suffixes.
+/// If argv[0] is `zellai-<name>` where `<name>` is in this list, the binary
+/// acts as a named wrapper for that agent.
+const KNOWN_WRAPPER_AGENTS: &[&str] = &["codex", "claude", "gemini", "aider", "opencode"];
+
+/// Extract an agent name from argv[0] if it matches the `zellai-<agent>` pattern.
+///
+/// Returns `Some(agent_name)` if argv[0] ends with `zellai-<known_agent>`,
+/// `None` otherwise.
+///
+/// # Examples
+/// ```ignore
+/// extract_agent_from_argv0("/usr/bin/zellai-codex") // => Some("codex")
+/// extract_agent_from_argv0("zellai")                // => None
+/// extract_agent_from_argv0("zellai-cli")            // => None
+/// ```
+pub fn extract_agent_from_argv0(argv0: &str) -> Option<String> {
+    // Get the base name (strip directory path)
+    let base = argv0.rsplit('/').next().unwrap_or(argv0);
+
+    // Check for `zellai-<agent>` pattern
+    if let Some(suffix) = base.strip_prefix("zellai-")
+        && KNOWN_WRAPPER_AGENTS.contains(&suffix)
+    {
+        return Some(suffix.to_string());
+    }
+
+    None
 }
