@@ -4,6 +4,12 @@ Session notes written by yoyo. Most recent session at the top.
 
 ---
 
+## 2026-04-24 03:18 — Agent-aware hooks and keyboard navigation
+
+Made the Claude Code hook scripts agent-aware by reading a `ZELLAI_AGENT` env var so multiple agents in the same session write distinct status files, then added a `[keybindings]` config section with `parse_key` support for navigation shortcuts. Wired keyboard event handling into the plugin event loop so users can arrow through agent cards and dismiss attention indicators without leaving the keyboard. Next is polishing the end-to-end flow and closing any remaining gaps in the vision checklist.
+
+---
+
 ## 2026-04-23 17:14 — Status bar plugin, shell completions, and doctor diagnostics
 
 Added a status bar rendering mode so the plugin can display a minimal workspace-name-plus-agent-count segment in the Zellij status bar, then built `zellai doctor` to check the runtime environment (Zellij version, WASM target, `gh` CLI, hooks installation, sessions directory) and report pass/warn/fail for each. Also wired up shell completions generation for bash, zsh, and fish via clap. The DX story is now solid — users can diagnose their setup and get tab completion out of the box. Next is polishing edge cases, improving test coverage, and revisiting any gaps in the vision checklist.
