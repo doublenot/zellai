@@ -51,7 +51,7 @@ pub fn run_with_agent(agent: &str, command: Vec<String>) -> Result<(), String> {
     // Clone agent name before moving it into StatusWriter — the background thread needs it too
     let bg_agent_name = agent.to_string();
 
-    let writer = StatusWriter::new(session_id.clone(), agent.to_string(), sessions_dir);
+    let mut writer = StatusWriter::new(session_id.clone(), agent.to_string(), sessions_dir);
 
     // Create sessions directory
     std::fs::create_dir_all(
@@ -99,7 +99,7 @@ pub fn run_with_agent(agent: &str, command: Vec<String>) -> Result<(), String> {
     let bg_sessions_dir = writer.status_file_path().parent().unwrap().to_path_buf();
 
     let bg_thread = thread::spawn(move || {
-        let bg_writer = StatusWriter::new(bg_session_id, bg_agent_name, bg_sessions_dir);
+        let mut bg_writer = StatusWriter::new(bg_session_id, bg_agent_name, bg_sessions_dir);
         while running_clone.load(Ordering::Relaxed) {
             thread::sleep(UPDATE_INTERVAL);
             if running_clone.load(Ordering::Relaxed) {

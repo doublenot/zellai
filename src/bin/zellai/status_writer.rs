@@ -8,14 +8,23 @@ use std::fs;
 use std::io;
 use std::path::PathBuf;
 use std::process::Command;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 /// Writes agent status files to the sessions directory.
 pub struct StatusWriter {
     session_id: String,
     agent: String,
     sessions_dir: PathBuf,
+    /// Cached PR number from last `gh` check.
+    cached_pr_number: Option<u32>,
+    /// Cached CI status string from last `gh` check.
+    cached_ci_status: Option<String>,
+    /// When we last called `gh pr view`.
+    last_pr_check: Option<Instant>,
 }
+
+/// How often to re-check PR/CI status via `gh` (in seconds).
+const PR_CHECK_INTERVAL_SECS: u64 = 30;
 
 impl StatusWriter {
     pub fn new(session_id: String, agent: String, sessions_dir: PathBuf) -> Self {
@@ -23,12 +32,15 @@ impl StatusWriter {
             session_id,
             agent,
             sessions_dir,
+            cached_pr_number: None,
+            cached_ci_status: None,
+            last_pr_check: None,
         }
     }
 
     /// Write a status file atomically (write to `.tmp`, then rename).
     pub fn write_status(
-        &self,
+        &mut self,
         status: &str,
         last_message: Option<&str>,
         needs_attention: bool,
@@ -38,6 +50,18 @@ impl StatusWriter {
         let (git_branch, git_dirty) = collect_git_info();
         let working_dir = get_working_dir();
         let updated_at = epoch_secs();
+
+        // Collect PR/CI info with caching (only re-check every PR_CHECK_INTERVAL_SECS)
+        let should_check = match self.last_pr_check {
+            None => true,
+            Some(last) => last.elapsed().as_secs() >= PR_CHECK_INTERVAL_SECS,
+        };
+        if should_check {
+            let (pr_number, ci_status) = collect_pr_info();
+            self.cached_pr_number = pr_number;
+            self.cached_ci_status = ci_status;
+            self.last_pr_check = Some(Instant::now());
+        }
 
         let json = serde_json::json!({
             "version": 1,
@@ -49,6 +73,8 @@ impl StatusWriter {
             "working_dir": working_dir,
             "last_message": last_message,
             "ports": [],
+            "pr_number": self.cached_pr_number,
+            "pr_ci_status": self.cached_ci_status,
             "needs_attention": needs_attention,
             "updated_at": updated_at
         });
@@ -118,6 +144,68 @@ fn epoch_secs() -> u64 {
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_secs())
         .unwrap_or(0)
+}
+
+/// Collect PR number and CI status via `gh pr view`.
+///
+/// Degrades gracefully: returns `(None, None)` if `gh` is not installed,
+/// not authenticated, not in a git repo, or no PR exists for the current branch.
+fn collect_pr_info() -> (Option<u32>, Option<String>) {
+    let output = Command::new("gh")
+        .args(["pr", "view", "--json", "number,statusCheckRollup"])
+        .output();
+
+    let output = match output {
+        Ok(o) if o.status.success() => o,
+        // gh not found, auth error, no PR, or any other failure → degrade gracefully
+        _ => return (None, None),
+    };
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    parse_pr_json(&stdout)
+}
+
+/// Parse the JSON output from `gh pr view --json number,statusCheckRollup`.
+///
+/// Extracted as a separate function for testability (can't run `gh` in CI).
+/// Returns `(pr_number, ci_status)` where ci_status is one of
+/// "passing", "failing", "pending", or None.
+fn parse_pr_json(json_str: &str) -> (Option<u32>, Option<String>) {
+    let parsed: serde_json::Value = match serde_json::from_str(json_str) {
+        Ok(v) => v,
+        Err(_) => return (None, None),
+    };
+
+    let pr_number = parsed
+        .get("number")
+        .and_then(|v| v.as_u64())
+        .map(|n| n as u32);
+
+    let ci_status = parsed
+        .get("statusCheckRollup")
+        .and_then(|v| v.as_array())
+        .filter(|checks| !checks.is_empty())
+        .map(|checks| {
+            let has_failure = checks.iter().any(|c| {
+                let state = c.get("state").and_then(|s| s.as_str()).unwrap_or("");
+                state == "FAILURE" || state == "ERROR"
+            });
+            if has_failure {
+                return "failing".to_string();
+            }
+
+            let all_success = checks.iter().all(|c| {
+                let state = c.get("state").and_then(|s| s.as_str()).unwrap_or("");
+                state == "SUCCESS"
+            });
+            if all_success {
+                return "passing".to_string();
+            }
+
+            "pending".to_string()
+        });
+
+    (pr_number, ci_status)
 }
 
 /// Detect agent kind from the command name.
@@ -370,7 +458,7 @@ mod tests {
     #[test]
     fn test_write_status_creates_valid_json() {
         let dir = test_sessions_dir("write_status_json");
-        let writer = StatusWriter::new(
+        let mut writer = StatusWriter::new(
             "test-session-1".to_string(),
             "claude".to_string(),
             dir.clone(),
@@ -417,7 +505,7 @@ mod tests {
     #[test]
     fn test_write_status_null_last_message() {
         let dir = test_sessions_dir("write_status_null_msg");
-        let writer = StatusWriter::new(
+        let mut writer = StatusWriter::new(
             "test-null-msg".to_string(),
             "codex".to_string(),
             dir.clone(),
@@ -439,7 +527,7 @@ mod tests {
     #[test]
     fn test_write_status_atomic() {
         let dir = test_sessions_dir("write_status_atomic");
-        let writer =
+        let mut writer =
             StatusWriter::new("test-atomic".to_string(), "claude".to_string(), dir.clone());
 
         writer.write_status("thinking", None, false).unwrap();
@@ -462,7 +550,7 @@ mod tests {
     #[test]
     fn test_cleanup_removes_file() {
         let dir = test_sessions_dir("cleanup_removes");
-        let writer =
+        let mut writer =
             StatusWriter::new("test-cleanup".to_string(), "aider".to_string(), dir.clone());
 
         writer.write_status("thinking", None, false).unwrap();
@@ -483,7 +571,8 @@ mod tests {
     #[test]
     fn test_cleanup_idempotent() {
         let dir = test_sessions_dir("cleanup_idempotent");
-        let writer = StatusWriter::new("test-idem".to_string(), "claude".to_string(), dir.clone());
+        let mut writer =
+            StatusWriter::new("test-idem".to_string(), "claude".to_string(), dir.clone());
 
         // cleanup without ever writing — should not error
         writer.cleanup().unwrap();
@@ -501,7 +590,7 @@ mod tests {
         // We can't easily set the working_dir to a path with quotes (it reads CWD),
         // but we CAN test that last_message with special chars produces valid JSON.
         let dir = test_sessions_dir("json_escapes");
-        let writer =
+        let mut writer =
             StatusWriter::new("test-escape".to_string(), "claude".to_string(), dir.clone());
 
         let tricky_msg = r#"Reading "file with quotes" and \backslashes\ and tabs	here"#;
@@ -534,7 +623,8 @@ mod tests {
         // The nested directory doesn't exist yet
         assert!(!dir.exists());
 
-        let writer = StatusWriter::new("test-mkdir".to_string(), "gemini".to_string(), dir.clone());
+        let mut writer =
+            StatusWriter::new("test-mkdir".to_string(), "gemini".to_string(), dir.clone());
         writer.write_status("thinking", None, false).unwrap();
 
         assert!(
@@ -550,7 +640,7 @@ mod tests {
     #[test]
     fn test_write_status_overwrites() {
         let dir = test_sessions_dir("write_overwrite");
-        let writer = StatusWriter::new(
+        let mut writer = StatusWriter::new(
             "test-overwrite".to_string(),
             "claude".to_string(),
             dir.clone(),
@@ -565,6 +655,161 @@ mod tests {
         let json: serde_json::Value = serde_json::from_str(&content).unwrap();
         assert_eq!(json["status"], "idle");
         assert_eq!(json["last_message"], "second");
+
+        cleanup_test_dir(&dir);
+    }
+
+    // ---- parse_pr_json tests ----
+
+    #[test]
+    fn test_parse_pr_json_all_passing() {
+        let json = r#"{
+            "number": 42,
+            "statusCheckRollup": [
+                {"state": "SUCCESS"},
+                {"state": "SUCCESS"},
+                {"state": "SUCCESS"}
+            ]
+        }"#;
+        let (pr, ci) = parse_pr_json(json);
+        assert_eq!(pr, Some(42));
+        assert_eq!(ci.as_deref(), Some("passing"));
+    }
+
+    #[test]
+    fn test_parse_pr_json_failing() {
+        let json = r#"{
+            "number": 42,
+            "statusCheckRollup": [
+                {"state": "SUCCESS"},
+                {"state": "FAILURE"},
+                {"state": "SUCCESS"}
+            ]
+        }"#;
+        let (pr, ci) = parse_pr_json(json);
+        assert_eq!(pr, Some(42));
+        assert_eq!(ci.as_deref(), Some("failing"));
+    }
+
+    #[test]
+    fn test_parse_pr_json_error_state() {
+        let json = r#"{
+            "number": 99,
+            "statusCheckRollup": [
+                {"state": "SUCCESS"},
+                {"state": "ERROR"}
+            ]
+        }"#;
+        let (pr, ci) = parse_pr_json(json);
+        assert_eq!(pr, Some(99));
+        assert_eq!(ci.as_deref(), Some("failing"));
+    }
+
+    #[test]
+    fn test_parse_pr_json_pending() {
+        let json = r#"{
+            "number": 42,
+            "statusCheckRollup": [
+                {"state": "SUCCESS"},
+                {"state": "PENDING"},
+                {"state": "IN_PROGRESS"}
+            ]
+        }"#;
+        let (pr, ci) = parse_pr_json(json);
+        assert_eq!(pr, Some(42));
+        assert_eq!(ci.as_deref(), Some("pending"));
+    }
+
+    #[test]
+    fn test_parse_pr_json_no_checks() {
+        let json = r#"{
+            "number": 42,
+            "statusCheckRollup": []
+        }"#;
+        let (pr, ci) = parse_pr_json(json);
+        assert_eq!(pr, Some(42));
+        assert_eq!(ci, None);
+    }
+
+    #[test]
+    fn test_parse_pr_json_null_checks() {
+        let json = r#"{
+            "number": 7,
+            "statusCheckRollup": null
+        }"#;
+        let (pr, ci) = parse_pr_json(json);
+        assert_eq!(pr, Some(7));
+        assert_eq!(ci, None);
+    }
+
+    #[test]
+    fn test_parse_pr_json_invalid() {
+        let (pr, ci) = parse_pr_json("this is not json");
+        assert_eq!(pr, None);
+        assert_eq!(ci, None);
+    }
+
+    #[test]
+    fn test_parse_pr_json_empty() {
+        let (pr, ci) = parse_pr_json("");
+        assert_eq!(pr, None);
+        assert_eq!(ci, None);
+    }
+
+    #[test]
+    fn test_parse_pr_json_mixed_failure_takes_priority() {
+        // Even with pending and passing checks, one failure → "failing"
+        let json = r#"{
+            "number": 100,
+            "statusCheckRollup": [
+                {"state": "SUCCESS"},
+                {"state": "PENDING"},
+                {"state": "FAILURE"},
+                {"state": "IN_PROGRESS"}
+            ]
+        }"#;
+        let (pr, ci) = parse_pr_json(json);
+        assert_eq!(pr, Some(100));
+        assert_eq!(ci.as_deref(), Some("failing"));
+    }
+
+    #[test]
+    fn test_parse_pr_json_missing_number() {
+        let json = r#"{
+            "statusCheckRollup": [
+                {"state": "SUCCESS"}
+            ]
+        }"#;
+        let (pr, ci) = parse_pr_json(json);
+        assert_eq!(pr, None);
+        assert_eq!(ci.as_deref(), Some("passing"));
+    }
+
+    #[test]
+    fn test_write_status_includes_pr_fields() {
+        // After write_status, the JSON should include pr_number and pr_ci_status fields
+        // (they'll be null since gh isn't available in test, but fields must be present)
+        let dir = test_sessions_dir("pr_fields");
+        let mut writer = StatusWriter::new(
+            "test-pr-fields".to_string(),
+            "claude".to_string(),
+            dir.clone(),
+        );
+
+        writer.write_status("thinking", None, false).unwrap();
+
+        let content = fs::read_to_string(writer.status_file_path()).unwrap();
+        let json: serde_json::Value = serde_json::from_str(&content).unwrap();
+
+        // Fields must be present in the JSON (even if null)
+        assert!(
+            json.get("pr_number").is_some(),
+            "pr_number field should be present in status JSON"
+        );
+        assert!(
+            json.get("pr_ci_status").is_some(),
+            "pr_ci_status field should be present in status JSON"
+        );
 
         cleanup_test_dir(&dir);
     }
