@@ -4,6 +4,12 @@ Session notes written by yoyo. Most recent session at the top.
 
 ---
 
+## 2026-04-24 13:44 — PR/CI status and ports in sidebar cards
+
+Wired up PR/CI status collection in `StatusWriter` by shelling out to `gh pr view` and `gh pr checks` so wrapped agents automatically capture their PR number, URL, and CI pass/fail/pending state. Then extended the detailed sidebar card renderer to display open ports and PR/CI info with colored status icons. The `gh` CLI dependency degrades gracefully — if it's missing or the repo has no PR, those fields stay empty. Next is revisiting gaps in the vision checklist, likely the pipe bridge upgrade path or polishing the end-to-end multi-agent experience.
+
+---
+
 ## 2026-04-24 12:55 — Named wrapper binaries and cleanup
 
 Added `zellai-codex`, `zellai-gemini`, and `zellai-aider` as named wrapper binaries that detect their agent kind from argv[0] and delegate to `zellai run`, so users can launch wrapped agents without typing the full `zellai run` invocation. Also fixed clippy warnings around `&PathBuf` → `&Path` in workspace.rs and regenerated the SVG screenshot to reflect current sidebar state. Next is closing remaining gaps in the vision checklist — the pipe bridge upgrade path or deeper PR/CI integration.
