@@ -2,6 +2,8 @@
 
 The agentplex for Linux — a Zellij plugin that gives developers a native, agent-aware terminal workspace for running multiple AI coding agents simultaneously.
 
+![zellai sidebar screenshot](docs/screenshot.svg)
+
 **[Read the product vision →](zellai-vision.md)**
 
 ---
