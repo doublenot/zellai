@@ -99,6 +99,65 @@ impl Default for BridgeConfig {
 }
 
 // ---------------------------------------------------------------------------
+// Keybindings
+// ---------------------------------------------------------------------------
+
+/// Configuration for keyboard shortcuts.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct KeybindingsConfig {
+    pub next_attention: String,
+    pub dismiss: String,
+    pub jump_to: String,
+}
+
+impl Default for KeybindingsConfig {
+    fn default() -> Self {
+        Self {
+            next_attention: "Ctrl a".to_string(),
+            dismiss: "Ctrl d".to_string(),
+            jump_to: "Ctrl g".to_string(),
+        }
+    }
+}
+
+/// Parse a keybinding string into `(has_ctrl, char)`.
+///
+/// Accepts formats:
+/// - `"Ctrl x"` → `Some((true, 'x'))`
+/// - `"x"` → `Some((false, 'x'))`
+///
+/// Returns `None` for empty strings, incomplete modifiers, or multi-char keys.
+pub fn parse_key(s: &str) -> Option<(bool, char)> {
+    let s = s.trim();
+    if s.is_empty() {
+        return None;
+    }
+
+    if let Some(rest) = s.strip_prefix("Ctrl ") {
+        let rest = rest.trim();
+        let mut chars = rest.chars();
+        let ch = chars.next()?;
+        if chars.next().is_some() {
+            // More than one character after "Ctrl "
+            return None;
+        }
+        Some((true, ch))
+    } else if s == "Ctrl" {
+        // Incomplete modifier
+        None
+    } else {
+        let mut chars = s.chars();
+        let ch = chars.next()?;
+        if chars.next().is_some() {
+            // Multi-char key without recognized modifier
+            return None;
+        }
+        Some((false, ch))
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Top-level config
 // ---------------------------------------------------------------------------
 
@@ -112,6 +171,7 @@ pub struct ZellaiConfig {
     pub sidebar: SidebarConfig,
     pub teams: TeamsConfig,
     pub bridge: BridgeConfig,
+    pub keybindings: KeybindingsConfig,
 }
 
 // ---------------------------------------------------------------------------
@@ -260,5 +320,98 @@ worker_count = 5
         assert_eq!(cfg.teams.default_layout, TeamsLayout::OrchestratorTop);
         assert_eq!(cfg.teams.orchestrator_agent, "claude");
         assert_eq!(cfg.teams.worker_agent, "claude");
+    }
+
+    // -----------------------------------------------------------------------
+    // Keybindings tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_default_keybindings() {
+        let cfg = ZellaiConfig::default();
+        assert_eq!(cfg.keybindings.next_attention, "Ctrl a");
+        assert_eq!(cfg.keybindings.dismiss, "Ctrl d");
+        assert_eq!(cfg.keybindings.jump_to, "Ctrl g");
+    }
+
+    #[test]
+    fn test_parse_key_ctrl_a() {
+        assert_eq!(parse_key("Ctrl a"), Some((true, 'a')));
+    }
+
+    #[test]
+    fn test_parse_key_ctrl_d() {
+        assert_eq!(parse_key("Ctrl d"), Some((true, 'd')));
+    }
+
+    #[test]
+    fn test_parse_key_plain_char() {
+        assert_eq!(parse_key("x"), Some((false, 'x')));
+    }
+
+    #[test]
+    fn test_parse_key_empty() {
+        assert_eq!(parse_key(""), None);
+    }
+
+    #[test]
+    fn test_parse_key_incomplete_ctrl() {
+        assert_eq!(parse_key("Ctrl"), None);
+    }
+
+    #[test]
+    fn test_keybindings_roundtrip() {
+        let cfg = ZellaiConfig::default();
+        let serialized = toml::to_string(&cfg).expect("should serialize");
+        let deserialized = parse_config(&serialized).expect("should deserialize");
+        assert_eq!(cfg.keybindings, deserialized.keybindings);
+    }
+
+    #[test]
+    fn test_partial_keybindings_override() {
+        let toml_str = r#"
+[keybindings]
+dismiss = "Ctrl x"
+"#;
+        let cfg = parse_config(toml_str).expect("should parse");
+        // Overridden
+        assert_eq!(cfg.keybindings.dismiss, "Ctrl x");
+        // Defaults preserved
+        assert_eq!(cfg.keybindings.next_attention, "Ctrl a");
+        assert_eq!(cfg.keybindings.jump_to, "Ctrl g");
+    }
+
+    #[test]
+    fn test_full_config_with_keybindings() {
+        let toml_str = r#"
+[sidebar]
+position = "right"
+card_density = "compact"
+attention_animation = false
+
+[teams]
+default_layout = "equal-grid"
+orchestrator_agent = "codex"
+worker_agent = "gemini"
+worker_count = 3
+
+[bridge]
+sessions_dir = "/tmp/zellai/sessions"
+poll_interval_ms = 1000
+stale_threshold_s = 120
+
+[keybindings]
+next_attention = "Ctrl n"
+dismiss = "Ctrl x"
+jump_to = "Ctrl j"
+"#;
+        let cfg = parse_config(toml_str).expect("should parse");
+        assert_eq!(cfg.keybindings.next_attention, "Ctrl n");
+        assert_eq!(cfg.keybindings.dismiss, "Ctrl x");
+        assert_eq!(cfg.keybindings.jump_to, "Ctrl j");
+        // Verify other sections also parsed
+        assert_eq!(cfg.sidebar.position, SidebarPosition::Right);
+        assert_eq!(cfg.teams.worker_count, 3);
+        assert_eq!(cfg.bridge.poll_interval_ms, 1000);
     }
 }
