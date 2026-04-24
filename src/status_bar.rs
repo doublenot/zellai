@@ -19,15 +19,17 @@ pub fn render_status_bar(agents: &[&AgentStatus], workspace_name: &str, cols: us
     let attention_count = agents.iter().filter(|a| a.needs_attention).count();
     let agent_count = agents.len();
 
+    let agent_word = if agent_count == 1 { "agent" } else { "agents" };
+
     let full = if agent_count == 0 {
         format!(" ⬡ {} ", workspace_name)
     } else if attention_count > 0 {
         format!(
-            " ⬡ {} | {} agents | {}⚠ ",
-            workspace_name, agent_count, attention_count
+            " ⬡ {} | {} {} | {}⚠ ",
+            workspace_name, agent_count, agent_word, attention_count
         )
     } else {
-        format!(" ⬡ {} | {} agents ", workspace_name, agent_count)
+        format!(" ⬡ {} | {} {} ", workspace_name, agent_count, agent_word)
     };
 
     truncate_to_cols(&full, cols)
@@ -121,8 +123,20 @@ mod tests {
         let agents: Vec<&AgentStatus> = vec![&a1];
 
         let result = render_status_bar(&agents, "zellai", 80);
-        assert!(result.contains("1 agents"));
+        assert!(result.contains("1 agent"));
+        assert!(!result.contains("1 agents"));
         assert!(result.contains("1⚠"));
+    }
+
+    #[test]
+    fn test_single_agent_no_attention() {
+        let a1 = make_agent("s1", AgentStatusValue::Thinking);
+        let agents: Vec<&AgentStatus> = vec![&a1];
+
+        let result = render_status_bar(&agents, "zellai", 80);
+        assert!(result.contains("1 agent"));
+        assert!(!result.contains("1 agents"));
+        assert!(!result.contains("⚠"));
     }
 
     #[test]

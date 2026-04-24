@@ -57,7 +57,9 @@ impl Default for ZellaiPlugin {
             home_dir: None,
             mode: PluginMode::default(),
             workspace_name: "zellai".to_string(),
-            key_next_attention: config::parse_key(&config::KeybindingsConfig::default().next_attention),
+            key_next_attention: config::parse_key(
+                &config::KeybindingsConfig::default().next_attention,
+            ),
             key_dismiss: config::parse_key(&config::KeybindingsConfig::default().dismiss),
         }
     }
@@ -213,15 +215,13 @@ impl ZellijPlugin for ZellaiPlugin {
 
         match self.mode {
             PluginMode::Sidebar => {
-                let lines =
-                    sidebar::render_sidebar(&agent_refs, &self.config.sidebar, rows, cols);
+                let lines = sidebar::render_sidebar(&agent_refs, &self.config.sidebar, rows, cols);
                 for line in lines {
                     println!("{}", line);
                 }
             }
             PluginMode::StatusBar => {
-                let line =
-                    status_bar::render_status_bar(&agent_refs, &self.workspace_name, cols);
+                let line = status_bar::render_status_bar(&agent_refs, &self.workspace_name, cols);
                 print!("{}", line);
             }
         }

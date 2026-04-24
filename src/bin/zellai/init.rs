@@ -84,6 +84,7 @@ pub fn run(force: bool) -> Result<(), String> {
     Ok(())
 }
 
+#[derive(Debug, PartialEq)]
 enum HookAction {
     /// File doesn't exist — fresh install.
     Installed,
@@ -128,4 +129,71 @@ fn write_hook(target: &Path, content: &str) -> Result<(), String> {
             .map_err(|e| format!("Failed to chmod {}: {e}", target.display()))?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+
+    #[test]
+    fn test_install_hook_fresh() {
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("on-stop.sh");
+        // File doesn't exist → Installed
+        let action = install_hook(&target, "#!/bin/bash\n# zellai hook", false);
+        assert_eq!(action, HookAction::Installed);
+    }
+
+    #[test]
+    fn test_install_hook_existing_zellai() {
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("on-stop.sh");
+        fs::write(&target, "#!/bin/bash\n# managed by zellai\nexit 0").unwrap();
+        // File exists with "zellai" in content → Overwritten
+        let action = install_hook(&target, "#!/bin/bash\n# zellai hook", false);
+        assert_eq!(action, HookAction::Overwritten);
+    }
+
+    #[test]
+    fn test_install_hook_existing_foreign() {
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("on-stop.sh");
+        fs::write(&target, "#!/bin/bash\n# my custom hook\nexit 0").unwrap();
+        // File exists without "zellai" → Skipped
+        let action = install_hook(&target, "#!/bin/bash\n# zellai hook", false);
+        assert_eq!(action, HookAction::Skipped);
+    }
+
+    #[test]
+    fn test_install_hook_force() {
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("on-stop.sh");
+        fs::write(&target, "#!/bin/bash\n# my custom hook\nexit 0").unwrap();
+        // File exists without "zellai" + force=true → Overwritten
+        let action = install_hook(&target, "#!/bin/bash\n# zellai hook", true);
+        assert_eq!(action, HookAction::Overwritten);
+    }
+
+    #[test]
+    fn test_write_hook_creates_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("test-hook.sh");
+        let content = "#!/bin/bash\necho hello\n";
+        write_hook(&target, content).unwrap();
+        let read_back = fs::read_to_string(&target).unwrap();
+        assert_eq!(read_back, content);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_write_hook_executable() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("exec-hook.sh");
+        write_hook(&target, "#!/bin/bash\n").unwrap();
+        let meta = fs::metadata(&target).unwrap();
+        let mode = meta.permissions().mode();
+        assert_eq!(mode & 0o777, 0o755);
+    }
 }
