@@ -6,6 +6,7 @@
 #
 # Environment variables:
 #   ZELLAI_SESSION_ID   — (required) unique session identifier; exits silently if unset
+#   ZELLAI_AGENT        — (optional) agent name; defaults to "claude"
 #   ZELLAI_SESSIONS_DIR — (optional) override for sessions directory
 #   XDG_DATA_HOME       — (optional) base data dir; defaults to $HOME/.local/share
 
@@ -13,6 +14,9 @@ set -euo pipefail
 
 # Exit silently if not running under zellai
 [[ -z "${ZELLAI_SESSION_ID:-}" ]] && exit 0
+
+# Agent name — defaults to "claude" for Claude Code hooks
+agent_name="${ZELLAI_AGENT:-claude}"
 
 # Compute sessions directory
 sessions_dir="${ZELLAI_SESSIONS_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/zellai/sessions}"
@@ -44,7 +48,7 @@ cat > "$tmp_file" <<EOF
 {
   "version": 1,
   "session_id": "$ZELLAI_SESSION_ID",
-  "agent": "claude",
+  "agent": "$agent_name",
   "status": "idle",
   "git_branch": $git_branch_json,
   "git_dirty": $git_dirty,
