@@ -183,7 +183,7 @@ mod persistence {
     use super::*;
     use std::env;
     use std::fs;
-    use std::path::PathBuf;
+    use std::path::{Path, PathBuf};
 
     /// Resolve workspaces dir, respecting `$ZELLAI_DATA_DIR` env var.
     ///
@@ -198,6 +198,7 @@ mod persistence {
     }
 
     /// Internal helper: resolve workspaces dir with explicit env values for testing.
+    #[cfg(test)]
     fn resolve_workspaces_dir_with(zellai_data_dir: Option<&str>, home: Option<&str>) -> PathBuf {
         if let Some(data_dir) = zellai_data_dir {
             return PathBuf::from(data_dir).join("workspaces");
@@ -210,7 +211,7 @@ mod persistence {
     ///
     /// Creates the directory if it doesn't exist. Writes atomically
     /// (write to `.tmp`, then rename).
-    pub fn save_workspace_to(workspace: &Workspace, dir: &PathBuf) -> Result<(), String> {
+    pub fn save_workspace_to(workspace: &Workspace, dir: &Path) -> Result<(), String> {
         validate_workspace_name(&workspace.name)?;
 
         fs::create_dir_all(dir).map_err(|e| format!("failed to create workspaces dir: {e}"))?;
@@ -234,7 +235,7 @@ mod persistence {
     }
 
     /// Load a workspace by name from `<dir>/<name>.json`.
-    pub fn load_workspace_from(name: &str, dir: &PathBuf) -> Result<Workspace, String> {
+    pub fn load_workspace_from(name: &str, dir: &Path) -> Result<Workspace, String> {
         validate_workspace_name(name)?;
 
         let path = dir.join(format!("{name}.json"));
@@ -253,7 +254,7 @@ mod persistence {
     }
 
     /// List all saved workspace names in `dir` (scan for `.json` files).
-    pub fn list_workspaces_in(dir: &PathBuf) -> Result<Vec<String>, String> {
+    pub fn list_workspaces_in(dir: &Path) -> Result<Vec<String>, String> {
         if !dir.exists() {
             return Ok(Vec::new());
         }
@@ -279,7 +280,7 @@ mod persistence {
     }
 
     /// Delete a saved workspace file from `dir`.
-    pub fn delete_workspace_from(name: &str, dir: &PathBuf) -> Result<(), String> {
+    pub fn delete_workspace_from(name: &str, dir: &Path) -> Result<(), String> {
         validate_workspace_name(name)?;
 
         let path = dir.join(format!("{name}.json"));
