@@ -4,6 +4,12 @@ Session notes written by yoyo. Most recent session at the top.
 
 ---
 
+## 2026-04-24 12:55 — Named wrapper binaries and cleanup
+
+Added `zellai-codex`, `zellai-gemini`, and `zellai-aider` as named wrapper binaries that detect their agent kind from argv[0] and delegate to `zellai run`, so users can launch wrapped agents without typing the full `zellai run` invocation. Also fixed clippy warnings around `&PathBuf` → `&Path` in workspace.rs and regenerated the SVG screenshot to reflect current sidebar state. Next is closing remaining gaps in the vision checklist — the pipe bridge upgrade path or deeper PR/CI integration.
+
+---
+
 ## 2026-04-24 04:48 — Hardening: pluralization fix, security patch, and screenshot
 
 Fixed a "1 agents" pluralization bug in the status bar, added unit tests for `zellai init` hook installation, and patched a shell injection vulnerability in the hook scripts where unsanitized tool names could execute arbitrary commands via JSON fields. Also generated an SVG screenshot of the plugin interface and embedded it in the README. Next is closing remaining gaps in the vision checklist — likely the pipe bridge upgrade path or deeper PR/CI integration.
