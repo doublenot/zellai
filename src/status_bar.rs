@@ -5,12 +5,20 @@
 
 use crate::status::AgentStatus;
 
+/// ANSI reset — clears all attributes.
+const RESET: &str = "\x1b[0m";
+/// ANSI bold.
+const BOLD: &str = "\x1b[1m";
+/// ANSI yellow (for attention).
+const YELLOW: &str = "\x1b[33m";
+
 /// Render the status bar segment as a single line.
 ///
 /// Format: `⬡ workspace | N agents | M⚠`
 /// - If no agents: `⬡ workspace`
 /// - The `M⚠` section only appears when at least one agent needs attention.
-/// - Output is truncated to `cols` characters.
+/// - The `⬡` icon is bold, the `M⚠` section is yellow.
+/// - Output is truncated to `cols` visible characters.
 pub fn render_status_bar(agents: &[&AgentStatus], workspace_name: &str, cols: usize) -> String {
     if cols == 0 {
         return String::new();
@@ -22,38 +30,106 @@ pub fn render_status_bar(agents: &[&AgentStatus], workspace_name: &str, cols: us
     let agent_word = if agent_count == 1 { "agent" } else { "agents" };
 
     let full = if agent_count == 0 {
-        format!(" ⬡ {} ", workspace_name)
+        format!(" {}⬡{} {} ", BOLD, RESET, workspace_name)
     } else if attention_count > 0 {
         format!(
-            " ⬡ {} | {} {} | {}⚠ ",
-            workspace_name, agent_count, agent_word, attention_count
+            " {}⬡{} {} | {} {} | {}{}⚠{} ",
+            BOLD, RESET, workspace_name, agent_count, agent_word, YELLOW, attention_count, RESET
         )
     } else {
-        format!(" ⬡ {} | {} {} ", workspace_name, agent_count, agent_word)
+        format!(
+            " {}⬡{} {} | {} {} ",
+            BOLD, RESET, workspace_name, agent_count, agent_word
+        )
     };
 
     truncate_to_cols(&full, cols)
 }
 
-/// Truncate a string to fit within `cols` display columns.
+/// Truncate a string to fit within `cols` visible display columns.
 ///
-/// If the string is longer than `cols`, it is truncated and the last visible
-/// character is replaced with `…`.
+/// ANSI escape sequences are zero-width and do not count toward `cols`.
+/// If the visible string is longer than `cols`, it is truncated and the last
+/// visible character is replaced with `…`.
 fn truncate_to_cols(s: &str, cols: usize) -> String {
-    // Count characters for a simple approximation (Unicode symbols are mostly
-    // single-width in typical terminal fonts used with Zellij).
-    let chars: Vec<char> = s.chars().collect();
-    if chars.len() <= cols {
-        return s.to_string();
-    }
     if cols == 0 {
         return String::new();
+    }
+
+    let vis_len = visible_char_count(s);
+    if vis_len <= cols {
+        return s.to_string();
     }
     if cols == 1 {
         return "…".to_string();
     }
-    let mut result: String = chars[..cols - 1].iter().collect();
+
+    // Walk through keeping ANSI escapes but only up to cols-1 visible chars
+    let max_visible = cols - 1;
+    let mut result = String::with_capacity(s.len());
+    let mut visible = 0;
+    let mut in_escape = false;
+    let mut has_ansi = false;
+    for ch in s.chars() {
+        if in_escape {
+            result.push(ch);
+            if ch == 'm' {
+                in_escape = false;
+            }
+        } else if ch == '\x1b' {
+            in_escape = true;
+            has_ansi = true;
+            result.push(ch);
+        } else {
+            if visible >= max_visible {
+                break;
+            }
+            result.push(ch);
+            visible += 1;
+        }
+    }
     result.push('…');
+    if has_ansi {
+        result.push_str(RESET);
+    }
+    result
+}
+
+/// Count visible characters in a string, ignoring ANSI escape sequences.
+fn visible_char_count(s: &str) -> usize {
+    let mut count = 0;
+    let mut in_escape = false;
+    for ch in s.chars() {
+        if in_escape {
+            if ch == 'm' {
+                in_escape = false;
+            }
+        } else if ch == '\x1b' {
+            in_escape = true;
+        } else {
+            count += 1;
+        }
+    }
+    count
+}
+
+/// Strip ANSI escape sequences from a string.
+#[cfg(test)]
+#[allow(dead_code)]
+fn strip_ansi(s: &str) -> String {
+    let mut result = String::with_capacity(s.len());
+    let mut in_escape = false;
+    for ch in s.chars() {
+        if in_escape {
+            if ch == 'm' {
+                in_escape = false;
+            }
+        } else if ch == '\x1b' {
+            in_escape = true;
+        } else {
+            result.push(ch);
+        }
+    }
     result
 }
 
@@ -146,8 +222,8 @@ mod tests {
         let agents: Vec<&AgentStatus> = vec![&a1, &a2];
 
         let result = render_status_bar(&agents, "my-long-workspace-name", 10);
-        assert!(result.len() <= 15); // chars may be multi-byte, but within range
-        assert!(result.chars().count() <= 10);
+        // visible_char_count strips ANSI escapes; the visible output must fit in cols
+        assert!(visible_char_count(&result) <= 10);
     }
 
     #[test]
