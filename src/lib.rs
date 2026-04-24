@@ -36,6 +36,10 @@ struct ZellaiPlugin {
     mode: PluginMode,
     /// Workspace name shown in the status bar segment.
     workspace_name: String,
+    /// Parsed keybinding for next_attention (ctrl, char)
+    key_next_attention: Option<(bool, char)>,
+    /// Parsed keybinding for dismiss (ctrl, char)
+    key_dismiss: Option<(bool, char)>,
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -53,6 +57,8 @@ impl Default for ZellaiPlugin {
             home_dir: None,
             mode: PluginMode::default(),
             workspace_name: "zellai".to_string(),
+            key_next_attention: config::parse_key(&config::KeybindingsConfig::default().next_attention),
+            key_dismiss: config::parse_key(&config::KeybindingsConfig::default().dismiss),
         }
     }
 }
@@ -91,6 +97,10 @@ impl ZellijPlugin for ZellaiPlugin {
             );
         }
 
+        // Parse keybindings from config
+        self.key_next_attention = config::parse_key(&self.config.keybindings.next_attention);
+        self.key_dismiss = config::parse_key(&self.config.keybindings.dismiss);
+
         // Request permissions needed for file watching and running commands
         request_permission(&[
             PermissionType::ReadApplicationState,
@@ -105,6 +115,7 @@ impl ZellijPlugin for ZellaiPlugin {
             EventType::FileSystemDelete,
             EventType::RunCommandResult,
             EventType::PermissionRequestResult,
+            EventType::Key,
         ]);
         // Set a periodic timer for polling status files
         let interval = self.config.bridge.poll_interval_ms as f64 / 1000.0;
@@ -155,6 +166,42 @@ impl ZellijPlugin for ZellaiPlugin {
                 // Filesystem changed — trigger re-render so the next timer
                 // cycle picks up the changes.
                 true
+            }
+            Event::Key(key) => {
+                // Handle next_attention keybinding
+                if let Some((ctrl, ch)) = self.key_next_attention {
+                    let mut expected_modifiers = std::collections::BTreeSet::new();
+                    if ctrl {
+                        expected_modifiers.insert(KeyModifier::Ctrl);
+                    }
+                    let expected = KeyWithModifier {
+                        bare_key: BareKey::Char(ch),
+                        key_modifiers: expected_modifiers,
+                    };
+                    if key == expected {
+                        self.attention.next_attention();
+                        // TODO: map session_id to Zellij pane ID for focus_terminal_pane
+                        return true;
+                    }
+                }
+                // Handle dismiss keybinding
+                if let Some((ctrl, ch)) = self.key_dismiss {
+                    let mut expected_modifiers = std::collections::BTreeSet::new();
+                    if ctrl {
+                        expected_modifiers.insert(KeyModifier::Ctrl);
+                    }
+                    let expected = KeyWithModifier {
+                        bare_key: BareKey::Char(ch),
+                        key_modifiers: expected_modifiers,
+                    };
+                    if key == expected {
+                        if let Some(session_id) = self.attention.current().map(|s| s.to_string()) {
+                            self.attention.dismiss(&session_id);
+                        }
+                        return true;
+                    }
+                }
+                false
             }
             _ => false,
         }
