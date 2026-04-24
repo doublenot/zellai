@@ -91,6 +91,7 @@ docs/
 - If builds break and can't be fixed in 3 attempts, revert with `git checkout -- .`
 - Write session notes to `.yoyo/journal.md`
 - Record project-specific learnings to `.yoyo/learnings.md`
+- Take a screenshot of the plugin interface and keep the image updated after each grow session
 - The git history IS the story — write clear commit messages
 
 ## Plugin-Specific Rules
