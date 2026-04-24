@@ -12,6 +12,11 @@
 
 set -euo pipefail
 
+# Escape a string for safe JSON interpolation
+json_escape() {
+    printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g; s/\t/\\t/g' | tr -d '\n'
+}
+
 # Exit silently if not running under zellai
 [[ -z "${ZELLAI_SESSION_ID:-}" ]] && exit 0
 
@@ -36,9 +41,14 @@ fi
 working_dir=$(pwd)
 updated_at=$(date +%s)
 
-# Format git_branch as JSON (null if empty)
+# Escape all interpolated strings for JSON safety
+session_id_json=$(json_escape "$ZELLAI_SESSION_ID")
+agent_name_json=$(json_escape "$agent_name")
+working_dir_json=$(json_escape "$working_dir")
+
+# Format git_branch as JSON (null if empty, escaped otherwise)
 if [[ -n "$git_branch" ]]; then
-    git_branch_json="\"$git_branch\""
+    git_branch_json="\"$(json_escape "$git_branch")\""
 else
     git_branch_json="null"
 fi
@@ -47,12 +57,12 @@ fi
 cat > "$tmp_file" <<EOF
 {
   "version": 1,
-  "session_id": "$ZELLAI_SESSION_ID",
-  "agent": "$agent_name",
+  "session_id": "$session_id_json",
+  "agent": "$agent_name_json",
   "status": "idle",
   "git_branch": $git_branch_json,
   "git_dirty": $git_dirty,
-  "working_dir": "$working_dir",
+  "working_dir": "$working_dir_json",
   "last_message": null,
   "ports": [],
   "needs_attention": false,
