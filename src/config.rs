@@ -58,6 +58,37 @@ impl Default for SidebarConfig {
     }
 }
 
+/// Configuration for the orchestrator pane's task board.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct OrchestratorConfig {
+    /// Whether the task board is enabled
+    pub task_board: bool,
+    /// Kanban column names
+    pub task_board_columns: Vec<String>,
+    /// Whether to show cost/token tracking
+    pub show_cost_tracking: bool,
+    /// Whether to show the DAG dependency view
+    pub dag_view: bool,
+}
+
+impl Default for OrchestratorConfig {
+    fn default() -> Self {
+        Self {
+            task_board: false, // off by default — opt-in feature
+            task_board_columns: vec![
+                "todo".to_string(),
+                "in-progress".to_string(),
+                "review".to_string(),
+                "done".to_string(),
+                "blocked".to_string(),
+            ],
+            show_cost_tracking: false,
+            dag_view: true,
+        }
+    }
+}
+
 /// Configuration for the teams / multi-agent layout.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
@@ -66,6 +97,7 @@ pub struct TeamsConfig {
     pub orchestrator_agent: String,
     pub worker_agent: String,
     pub worker_count: u32,
+    pub orchestrator: OrchestratorConfig,
 }
 
 impl Default for TeamsConfig {
@@ -75,6 +107,7 @@ impl Default for TeamsConfig {
             orchestrator_agent: "claude".to_string(),
             worker_agent: "claude".to_string(),
             worker_count: 2,
+            orchestrator: OrchestratorConfig::default(),
         }
     }
 }
@@ -209,6 +242,17 @@ mod tests {
         assert_eq!(cfg.teams.orchestrator_agent, "claude");
         assert_eq!(cfg.teams.worker_agent, "claude");
         assert_eq!(cfg.teams.worker_count, 2);
+
+        // Orchestrator defaults
+        assert!(!cfg.teams.orchestrator.task_board); // off by default
+        assert_eq!(cfg.teams.orchestrator.task_board_columns.len(), 5);
+        assert_eq!(cfg.teams.orchestrator.task_board_columns[0], "todo");
+        assert_eq!(cfg.teams.orchestrator.task_board_columns[1], "in-progress");
+        assert_eq!(cfg.teams.orchestrator.task_board_columns[2], "review");
+        assert_eq!(cfg.teams.orchestrator.task_board_columns[3], "done");
+        assert_eq!(cfg.teams.orchestrator.task_board_columns[4], "blocked");
+        assert!(!cfg.teams.orchestrator.show_cost_tracking);
+        assert!(cfg.teams.orchestrator.dag_view);
 
         // Bridge defaults
         assert_eq!(cfg.bridge.sessions_dir, "~/.local/share/zellai/sessions");
@@ -413,5 +457,84 @@ jump_to = "Ctrl j"
         assert_eq!(cfg.sidebar.position, SidebarPosition::Right);
         assert_eq!(cfg.teams.worker_count, 3);
         assert_eq!(cfg.bridge.poll_interval_ms, 1000);
+        // Orchestrator defaults preserved when not specified
+        assert!(!cfg.teams.orchestrator.task_board);
+        assert!(cfg.teams.orchestrator.dag_view);
+    }
+
+    // -----------------------------------------------------------------------
+    // Orchestrator config tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_orchestrator_defaults_when_omitted() {
+        let toml_str = r#"
+[teams]
+worker_count = 3
+"#;
+        let cfg = parse_config(toml_str).expect("should parse");
+        assert_eq!(cfg.teams.worker_count, 3);
+        assert_eq!(cfg.teams.orchestrator, OrchestratorConfig::default());
+    }
+
+    #[test]
+    fn test_orchestrator_partial_config() {
+        let toml_str = r#"
+[teams.orchestrator]
+task_board = true
+show_cost_tracking = true
+"#;
+        let cfg = parse_config(toml_str).expect("should parse");
+        assert!(cfg.teams.orchestrator.task_board);
+        assert!(cfg.teams.orchestrator.show_cost_tracking);
+        // Defaults preserved for unset fields
+        assert!(cfg.teams.orchestrator.dag_view);
+        assert_eq!(cfg.teams.orchestrator.task_board_columns.len(), 5);
+    }
+
+    #[test]
+    fn test_orchestrator_full_config() {
+        let toml_str = r#"
+[teams]
+default_layout = "orchestrator-left"
+orchestrator_agent = "codex"
+worker_agent = "gemini"
+worker_count = 4
+
+[teams.orchestrator]
+task_board = true
+task_board_columns = ["backlog", "doing", "done"]
+show_cost_tracking = true
+dag_view = false
+"#;
+        let cfg = parse_config(toml_str).expect("should parse");
+        assert_eq!(cfg.teams.default_layout, TeamsLayout::OrchestratorLeft);
+        assert_eq!(cfg.teams.orchestrator_agent, "codex");
+        assert!(cfg.teams.orchestrator.task_board);
+        assert_eq!(
+            cfg.teams.orchestrator.task_board_columns,
+            vec!["backlog", "doing", "done"]
+        );
+        assert!(cfg.teams.orchestrator.show_cost_tracking);
+        assert!(!cfg.teams.orchestrator.dag_view);
+    }
+
+    #[test]
+    fn test_orchestrator_custom_columns() {
+        let toml_str = r#"
+[teams.orchestrator]
+task_board_columns = ["todo", "wip", "review", "shipped"]
+"#;
+        let cfg = parse_config(toml_str).expect("should parse");
+        assert_eq!(cfg.teams.orchestrator.task_board_columns.len(), 4);
+        assert_eq!(cfg.teams.orchestrator.task_board_columns[3], "shipped");
+    }
+
+    #[test]
+    fn test_orchestrator_roundtrip() {
+        let cfg = ZellaiConfig::default();
+        let serialized = toml::to_string(&cfg).expect("should serialize");
+        let deserialized = parse_config(&serialized).expect("should deserialize");
+        assert_eq!(cfg.teams.orchestrator, deserialized.teams.orchestrator);
     }
 }

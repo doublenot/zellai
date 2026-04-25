@@ -9,6 +9,7 @@ pub mod sidebar;
 pub mod status;
 pub mod status_bar;
 pub mod status_bridge;
+pub mod task_board;
 pub mod workspace;
 
 pub mod teams;

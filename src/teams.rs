@@ -159,6 +159,7 @@ mod tests {
             orchestrator_agent: "claude".to_string(),
             worker_agent: "codex".to_string(),
             worker_count: 3,
+            ..Default::default()
         };
         let panes = generate_team_layout(&config, "/home/dev/project");
 
@@ -185,6 +186,7 @@ mod tests {
             orchestrator_agent: "gemini".to_string(),
             worker_agent: "aider".to_string(),
             worker_count: 2,
+            ..Default::default()
         };
         let panes = generate_team_layout(&config, "/tmp");
 
@@ -211,6 +213,7 @@ mod tests {
             orchestrator_agent: "claude".to_string(),
             worker_agent: "claude".to_string(),
             worker_count: 3,
+            ..Default::default()
         };
         let panes = generate_team_layout(&config, "/home/dev");
 
@@ -237,6 +240,7 @@ mod tests {
             orchestrator_agent: "claude".to_string(),
             worker_agent: "claude".to_string(),
             worker_count: 5,
+            ..Default::default()
         };
         let panes = generate_team_layout(&config, "/home/dev");
         assert!(panes.is_empty());
@@ -270,6 +274,7 @@ mod tests {
             orchestrator_agent: "claude".to_string(),
             worker_agent: "claude".to_string(),
             worker_count: 0,
+            ..Default::default()
         };
         let panes = generate_team_layout(&config, "/home/dev");
 
@@ -285,6 +290,7 @@ mod tests {
             orchestrator_agent: "claude".to_string(),
             worker_agent: "claude".to_string(),
             worker_count: 0,
+            ..Default::default()
         };
         let panes = generate_team_layout(&config, "/home/dev");
 
@@ -299,6 +305,7 @@ mod tests {
             orchestrator_agent: "claude".to_string(),
             worker_agent: "claude".to_string(),
             worker_count: 0,
+            ..Default::default()
         };
         let panes = generate_team_layout(&config, "/home/dev");
 
@@ -314,6 +321,7 @@ mod tests {
             orchestrator_agent: "claude".to_string(),
             worker_agent: "codex".to_string(),
             worker_count: 1,
+            ..Default::default()
         };
         let panes = generate_team_layout(&config, "/home/dev");
 
@@ -347,6 +355,7 @@ mod tests {
             orchestrator_agent: "claude".to_string(),
             worker_agent: "gemini".to_string(),
             worker_count: 10,
+            ..Default::default()
         };
         let panes = generate_team_layout(&config, "/home/dev");
 
