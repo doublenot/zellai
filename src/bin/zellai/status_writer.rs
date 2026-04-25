@@ -24,6 +24,8 @@ pub struct StatusWriter {
     last_pr_check: Option<Instant>,
     /// Optional log file for per-pane execution logging.
     log_file: Option<fs::File>,
+    /// PID of the child process (for port detection).
+    child_pid: Option<u32>,
 }
 
 /// How often to re-check PR/CI status via `gh` (in seconds).
@@ -46,6 +48,7 @@ impl StatusWriter {
             cached_ci_status: None,
             last_pr_check: None,
             log_file,
+            child_pid: None,
         }
     }
 
@@ -95,6 +98,12 @@ impl StatusWriter {
             self.last_pr_check = Some(Instant::now());
         }
 
+        // Collect listening ports from the child process
+        let ports = match self.child_pid {
+            Some(pid) => collect_ports(pid),
+            None => Vec::new(),
+        };
+
         let json = serde_json::json!({
             "version": 1,
             "session_id": self.session_id,
@@ -104,7 +113,7 @@ impl StatusWriter {
             "git_dirty": git_dirty,
             "working_dir": working_dir,
             "last_message": last_message,
-            "ports": [],
+            "ports": ports,
             "pr_number": self.cached_pr_number,
             "pr_ci_status": self.cached_ci_status,
             "needs_attention": needs_attention,
@@ -159,6 +168,13 @@ impl StatusWriter {
 
     pub fn session_id(&self) -> &str {
         &self.session_id
+    }
+
+    /// Set the child PID for port detection.
+    ///
+    /// Once set, `write_status` will scan `/proc/<pid>/net/tcp` for listening ports.
+    pub fn set_child_pid(&mut self, pid: u32) {
+        self.child_pid = Some(pid);
     }
 }
 
@@ -287,6 +303,71 @@ fn parse_pr_json(json_str: &str) -> (Option<u32>, Option<String>) {
         });
 
     (pr_number, ci_status)
+}
+
+/// Collect listening TCP ports for a child process by reading `/proc/<pid>/net/tcp`.
+///
+/// Returns a sorted, deduplicated list of ports that are in LISTEN state (0A).
+/// Degrades gracefully: returns an empty Vec if the proc file cannot be read
+/// (e.g., child already exited, non-Linux platform, permission denied).
+#[cfg(target_os = "linux")]
+fn collect_ports(pid: u32) -> Vec<u16> {
+    let path = format!("/proc/{pid}/net/tcp");
+    match fs::read_to_string(&path) {
+        Ok(content) => parse_proc_net_tcp(&content),
+        Err(_) => Vec::new(),
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
+fn collect_ports(_pid: u32) -> Vec<u16> {
+    Vec::new()
+}
+
+/// Parse `/proc/net/tcp` content and extract listening port numbers.
+///
+/// The format is whitespace-delimited with a header line. Each data line has:
+///   `sl  local_address  rem_address  st  ...`
+/// where `local_address` is `HEX_IP:HEX_PORT` and `st` is the socket state
+/// (0A = TCP_LISTEN).
+///
+/// This function is pure (no I/O) for testability.
+#[cfg(any(target_os = "linux", test))]
+pub fn parse_proc_net_tcp(content: &str) -> Vec<u16> {
+    let mut ports = Vec::new();
+
+    for line in content.lines().skip(1) {
+        // Skip empty lines
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+
+        // Fields: sl, local_address, rem_address, st, ...
+        let fields: Vec<&str> = line.split_whitespace().collect();
+        if fields.len() < 4 {
+            continue;
+        }
+
+        // State field (index 3) — 0A is TCP_LISTEN
+        let state = fields[3];
+        if state != "0A" {
+            continue;
+        }
+
+        // local_address (index 1) is "HEX_IP:HEX_PORT"
+        let local_addr = fields[1];
+        if let Some(hex_port) = local_addr.split(':').nth(1)
+            && let Ok(port) = u16::from_str_radix(hex_port, 16)
+            && port > 0
+        {
+            ports.push(port);
+        }
+    }
+
+    ports.sort_unstable();
+    ports.dedup();
+    ports
 }
 
 /// Detect agent kind from the command name.
@@ -993,6 +1074,120 @@ mod tests {
             "third line: {}",
             lines[2]
         );
+
+        cleanup_test_dir(&dir);
+    }
+
+    // ---- parse_proc_net_tcp tests ----
+
+    /// Sample /proc/net/tcp content with a mix of LISTEN and ESTABLISHED sockets.
+    const SAMPLE_PROC_NET_TCP: &str = "\
+  sl  local_address rem_address   st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode
+   0: 00000000:0BB8 00000000:0000 0A 00000000:00000000 00:00000000 00000000  1000        0 12345 1 0000000000000000 100 0 0 10 0
+   1: 0100007F:1F90 00000000:0000 0A 00000000:00000000 00:00000000 00000000  1000        0 12346 1 0000000000000000 100 0 0 10 0
+   2: 0100007F:C6A8 0100007F:0BB8 01 00000000:00000000 00:00000000 00000000  1000        0 12347 1 0000000000000000 100 0 0 10 0
+   3: 00000000:01BB 00000000:0000 0A 00000000:00000000 00:00000000 00000000     0        0 12348 1 0000000000000000 100 0 0 10 0";
+
+    #[test]
+    fn test_parse_proc_net_tcp_extracts_listen_ports() {
+        let ports = parse_proc_net_tcp(SAMPLE_PROC_NET_TCP);
+        // 0x0BB8 = 3000, 0x1F90 = 8080, 0x01BB = 443
+        // 0xC6A8 = 50856 is ESTABLISHED (state 01), should be excluded
+        assert_eq!(ports, vec![443, 3000, 8080]);
+    }
+
+    #[test]
+    fn test_parse_proc_net_tcp_no_listen_entries() {
+        let content = "\
+  sl  local_address rem_address   st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode
+   0: 0100007F:C6A8 0100007F:0BB8 01 00000000:00000000 00:00000000 00000000  1000        0 12345 1 0000000000000000 100 0 0 10 0
+   1: 0100007F:C6A9 0100007F:1F90 06 00000000:00000000 00:00000000 00000000  1000        0 12346 1 0000000000000000 100 0 0 10 0";
+        let ports = parse_proc_net_tcp(content);
+        assert!(ports.is_empty());
+    }
+
+    #[test]
+    fn test_parse_proc_net_tcp_malformed_lines() {
+        let content = "\
+  sl  local_address rem_address   st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode
+   0: 00000000:0BB8 00000000:0000 0A 00000000:00000000 00:00000000 00000000  1000        0 12345 1
+short line
+   totally malformed garbage
+   2: ZZZZZZ:GGGG 00000000:0000 0A 00000000:00000000 00:00000000 00000000  1000        0 12347 1
+   3: 00000000:1F90 00000000:0000 0A 00000000:00000000 00:00000000 00000000  1000        0 12348 1";
+        let ports = parse_proc_net_tcp(content);
+        // Should extract 3000 (0x0BB8) and 8080 (0x1F90), skip malformed lines
+        assert_eq!(ports, vec![3000, 8080]);
+    }
+
+    #[test]
+    fn test_parse_proc_net_tcp_multiple_listeners() {
+        let content = "\
+  sl  local_address rem_address   st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode
+   0: 00000000:0050 00000000:0000 0A 00000000:00000000 00:00000000 00000000  1000        0 10001 1 0000000000000000 100 0 0 10 0
+   1: 00000000:01BB 00000000:0000 0A 00000000:00000000 00:00000000 00000000  1000        0 10002 1 0000000000000000 100 0 0 10 0
+   2: 00000000:1F90 00000000:0000 0A 00000000:00000000 00:00000000 00000000  1000        0 10003 1 0000000000000000 100 0 0 10 0
+   3: 00000000:0BB8 00000000:0000 0A 00000000:00000000 00:00000000 00000000  1000        0 10004 1 0000000000000000 100 0 0 10 0";
+        let ports = parse_proc_net_tcp(content);
+        // 0x0050 = 80, 0x01BB = 443, 0x1F90 = 8080, 0x0BB8 = 3000
+        assert_eq!(ports, vec![80, 443, 3000, 8080]);
+    }
+
+    #[test]
+    fn test_parse_proc_net_tcp_filters_non_listen_states() {
+        // Test various TCP states that should NOT be included
+        // 01 = ESTABLISHED, 02 = SYN_SENT, 06 = TIME_WAIT, 08 = CLOSE_WAIT
+        let content = "\
+  sl  local_address rem_address   st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode
+   0: 0100007F:C6A8 0100007F:0BB8 01 00000000:00000000 00:00000000 00000000  1000        0 11001 1
+   1: 0100007F:C6A9 0A01A8C0:0050 02 00000000:00000000 00:00000000 00000000  1000        0 11002 1
+   2: 0100007F:C6AA 0100007F:0BB8 06 00000000:00000000 00:00000000 00000000  1000        0 11003 1
+   3: 0100007F:C6AB 0100007F:0BB8 08 00000000:00000000 00:00000000 00000000  1000        0 11004 1
+   4: 00000000:0BB8 00000000:0000 0A 00000000:00000000 00:00000000 00000000  1000        0 11005 1";
+        let ports = parse_proc_net_tcp(content);
+        // Only the LISTEN entry (0A) on port 3000 should be included
+        assert_eq!(ports, vec![3000]);
+    }
+
+    #[test]
+    fn test_parse_proc_net_tcp_empty_content() {
+        let ports = parse_proc_net_tcp("");
+        assert!(ports.is_empty());
+    }
+
+    #[test]
+    fn test_parse_proc_net_tcp_header_only() {
+        let content = "  sl  local_address rem_address   st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode";
+        let ports = parse_proc_net_tcp(content);
+        assert!(ports.is_empty());
+    }
+
+    #[test]
+    fn test_parse_proc_net_tcp_deduplicates_ports() {
+        // Same port listening on different addresses (0.0.0.0 and 127.0.0.1)
+        let content = "\
+  sl  local_address rem_address   st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode
+   0: 00000000:0BB8 00000000:0000 0A 00000000:00000000 00:00000000 00000000  1000        0 12001 1
+   1: 0100007F:0BB8 00000000:0000 0A 00000000:00000000 00:00000000 00000000  1000        0 12002 1";
+        let ports = parse_proc_net_tcp(content);
+        assert_eq!(ports, vec![3000]);
+    }
+
+    #[test]
+    fn test_write_status_includes_ports_when_pid_set() {
+        // We can't easily inject a real /proc/net/tcp, but we can verify
+        // that when child_pid is None, ports is empty in the JSON output.
+        let dir = test_sessions_dir("ports_test");
+        let mut writer =
+            StatusWriter::new("test-ports".to_string(), "claude".to_string(), dir.clone());
+        // No child PID set — ports should be empty
+        writer.write_status("thinking", None, false).unwrap();
+
+        let status_path = dir.join("test-ports.json");
+        let content = fs::read_to_string(&status_path).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&content).unwrap();
+        let ports = parsed.get("ports").unwrap().as_array().unwrap();
+        assert!(ports.is_empty(), "ports should be empty with no child_pid");
 
         cleanup_test_dir(&dir);
     }

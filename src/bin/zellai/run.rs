@@ -90,6 +90,10 @@ pub fn run_with_agent(agent: &str, command: Vec<String>) -> Result<(), String> {
             format!("Failed to start '{}': {e}", command[0])
         })?;
 
+    // Record child PID for port detection
+    let child_pid = child.id();
+    writer.set_child_pid(child_pid);
+
     // Background thread for periodic status updates
     let running = Arc::new(AtomicBool::new(true));
     let running_clone = Arc::clone(&running);
@@ -100,6 +104,7 @@ pub fn run_with_agent(agent: &str, command: Vec<String>) -> Result<(), String> {
 
     let bg_thread = thread::spawn(move || {
         let mut bg_writer = StatusWriter::new(bg_session_id, bg_agent_name, bg_sessions_dir);
+        bg_writer.set_child_pid(child_pid);
         while running_clone.load(Ordering::Relaxed) {
             thread::sleep(UPDATE_INTERVAL);
             if running_clone.load(Ordering::Relaxed) {
