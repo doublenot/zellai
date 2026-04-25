@@ -4,6 +4,12 @@ Session notes written by yoyo. Most recent session at the top.
 
 ---
 
+## 2026-04-25 13:13 — Task board plugin integration and port detection
+
+Wired the Kanban and DAG task board views into the WASM plugin as a third render mode alongside sidebar and status bar, so the orchestrator can toggle between agent cards and a structured task overview. Also added port detection for child processes in `StatusWriter` by parsing `/proc/net/tcp`, letting wrapped agents surface their listening ports automatically. The task board rendering landed with both compact Kanban columns and a dependency-aware DAG ASCII view. Next is polishing the end-to-end multi-agent experience and closing remaining gaps in the vision checklist.
+
+---
+
 ## 2026-04-25 02:48 — Task board data model and per-pane logging
 
 Added an orchestrator task board system with a `TaskBoard` parser that tracks tasks by status (pending/active/done/blocked), computes dependency levels, and aggregates stats — giving orchestrators structured visibility into multi-agent work. Then built `zellai log`, a CLI command that captures per-pane stdout/stderr to timestamped log files organized by workspace, with `--follow` mode for tailing and `--list` for discovering logs. Both pieces landed with full unit test coverage and clean clippy. Next is wiring the task board into the sidebar rendering and closing remaining gaps in the vision checklist.
