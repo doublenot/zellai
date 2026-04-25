@@ -1,5 +1,6 @@
 mod doctor;
 mod init;
+mod log;
 mod run;
 mod status_writer;
 #[cfg(not(target_arch = "wasm32"))]
@@ -112,6 +113,24 @@ enum Commands {
     /// Check environment and diagnose issues
     Doctor,
 
+    /// View per-pane execution logs
+    Log {
+        /// Pane name to show logs for
+        pane: String,
+
+        /// Workspace name (default: from ZELLAI_WORKSPACE env or "default")
+        #[arg(long)]
+        workspace: Option<String>,
+
+        /// Number of lines to show (default: all)
+        #[arg(long, short = 'n')]
+        lines: Option<usize>,
+
+        /// Follow log output (not yet implemented)
+        #[arg(long, short = 'f')]
+        follow: bool,
+    },
+
     /// Generate shell completions
     Completions {
         /// Shell to generate completions for (bash, zsh, fish)
@@ -215,6 +234,17 @@ fn main() {
         }
         Commands::Doctor => {
             if let Err(msg) = doctor::run() {
+                eprintln!("{msg}");
+                std::process::exit(1);
+            }
+        }
+        Commands::Log {
+            pane,
+            workspace,
+            lines,
+            follow,
+        } => {
+            if let Err(msg) = log::run(&pane, workspace.as_deref(), follow, lines) {
                 eprintln!("{msg}");
                 std::process::exit(1);
             }

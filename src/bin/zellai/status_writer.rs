@@ -6,6 +6,7 @@
 use std::env;
 use std::fs;
 use std::io;
+use std::io::Write;
 use std::path::PathBuf;
 use std::process::Command;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
@@ -21,6 +22,8 @@ pub struct StatusWriter {
     cached_ci_status: Option<String>,
     /// When we last called `gh pr view`.
     last_pr_check: Option<Instant>,
+    /// Optional log file for per-pane execution logging.
+    log_file: Option<fs::File>,
 }
 
 /// How often to re-check PR/CI status via `gh` (in seconds).
@@ -28,6 +31,13 @@ const PR_CHECK_INTERVAL_SECS: u64 = 30;
 
 impl StatusWriter {
     pub fn new(session_id: String, agent: String, sessions_dir: PathBuf) -> Self {
+        let log_workspace = env::var("ZELLAI_WORKSPACE")
+            .ok()
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(|| "default".to_string());
+
+        let log_file = Self::open_log_file(&sessions_dir, &log_workspace, &session_id);
+
         Self {
             session_id,
             agent,
@@ -35,7 +45,29 @@ impl StatusWriter {
             cached_pr_number: None,
             cached_ci_status: None,
             last_pr_check: None,
+            log_file,
         }
+    }
+
+    /// Open (or create) the log file for this session.
+    ///
+    /// Log files live at `<sessions_dir>/<workspace>/<session_id>.log`.
+    /// Returns `None` if the directory can't be created or the file can't be opened.
+    fn open_log_file(
+        sessions_dir: &std::path::Path,
+        workspace: &str,
+        session_id: &str,
+    ) -> Option<fs::File> {
+        let log_dir = sessions_dir.join(workspace);
+        if fs::create_dir_all(&log_dir).is_err() {
+            return None;
+        }
+        let log_path = log_dir.join(format!("{session_id}.log"));
+        fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(log_path)
+            .ok()
     }
 
     /// Write a status file atomically (write to `.tmp`, then rename).
@@ -86,7 +118,25 @@ impl StatusWriter {
         fs::write(&tmp_path, content)?;
         fs::rename(&tmp_path, self.status_file_path())?;
 
+        // Log the status change
+        let log_msg = match last_message {
+            Some(msg) => format!("Status changed to: {status} ({msg})"),
+            None => format!("Status changed to: {status}"),
+        };
+        self.write_log_line(&log_msg);
+
         Ok(())
+    }
+
+    /// Append a timestamped line to the per-pane log file.
+    ///
+    /// Lines are formatted as `<ISO-8601-ish timestamp> <message>\n`.
+    /// Silently ignores write errors (logging is best-effort).
+    pub fn write_log_line(&mut self, line: &str) {
+        if let Some(ref mut file) = self.log_file {
+            let timestamp = format_timestamp(epoch_secs());
+            let _ = writeln!(file, "{timestamp} {line}");
+        }
     }
 
     /// Remove the status file.
@@ -144,6 +194,37 @@ fn epoch_secs() -> u64 {
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_secs())
         .unwrap_or(0)
+}
+
+/// Format a Unix epoch timestamp as a human-readable UTC string.
+///
+/// Produces `YYYY-MM-DDTHH:MM:SSZ` format without external dependencies.
+/// Falls back to raw epoch seconds if the calculation fails.
+pub fn format_timestamp(epoch: u64) -> String {
+    // Constants for date calculation
+    const SECS_PER_MINUTE: u64 = 60;
+    const SECS_PER_HOUR: u64 = 3600;
+    const SECS_PER_DAY: u64 = 86400;
+
+    let total_days = epoch / SECS_PER_DAY;
+    let day_secs = epoch % SECS_PER_DAY;
+    let hours = day_secs / SECS_PER_HOUR;
+    let minutes = (day_secs % SECS_PER_HOUR) / SECS_PER_MINUTE;
+    let seconds = day_secs % SECS_PER_MINUTE;
+
+    // Civil date from days since Unix epoch (algorithm from Howard Hinnant)
+    let z = total_days as i64 + 719468;
+    let era = if z >= 0 { z } else { z - 146096 } / 146097;
+    let doe = (z - era * 146097) as u64; // day of era [0, 146096]
+    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365; // year of era [0, 399]
+    let y = yoe as i64 + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100); // day of year [0, 365]
+    let mp = (5 * doy + 2) / 153; // [0, 11]
+    let d = doy - (153 * mp + 2) / 5 + 1; // day [1, 31]
+    let m = if mp < 10 { mp + 3 } else { mp - 9 }; // month [1, 12]
+    let y = if m <= 2 { y + 1 } else { y };
+
+    format!("{y:04}-{m:02}-{d:02}T{hours:02}:{minutes:02}:{seconds:02}Z")
 }
 
 /// Collect PR number and CI status via `gh pr view`.
@@ -809,6 +890,108 @@ mod tests {
         assert!(
             json.get("pr_ci_status").is_some(),
             "pr_ci_status field should be present in status JSON"
+        );
+
+        cleanup_test_dir(&dir);
+    }
+
+    // ---- format_timestamp tests ----
+
+    #[test]
+    fn test_format_timestamp_unix_epoch() {
+        assert_eq!(format_timestamp(0), "1970-01-01T00:00:00Z");
+    }
+
+    #[test]
+    fn test_format_timestamp_known_date() {
+        // 2025-01-01T00:00:00Z = 1735689600
+        assert_eq!(format_timestamp(1735689600), "2025-01-01T00:00:00Z");
+    }
+
+    #[test]
+    fn test_format_timestamp_with_time() {
+        // 2025-06-15T15:10:45Z = 1750000245
+        assert_eq!(format_timestamp(1750000245), "2025-06-15T15:10:45Z");
+    }
+
+    // ---- write_log_line tests ----
+
+    #[test]
+    fn test_write_log_line_creates_log_file() {
+        let dir = test_sessions_dir("log_line");
+        let mut writer = StatusWriter::new(
+            "test-log-session".to_string(),
+            "claude".to_string(),
+            dir.clone(),
+        );
+
+        writer.write_log_line("Test log message");
+
+        // The log file should exist in the workspace subdirectory
+        let log_dir = dir.join("default");
+        let log_path = log_dir.join("test-log-session.log");
+        assert!(
+            log_path.exists(),
+            "log file should be created at {log_path:?}"
+        );
+
+        let content = fs::read_to_string(&log_path).unwrap();
+        assert!(
+            content.contains("Test log message"),
+            "log should contain the message, got: {content}"
+        );
+        // Verify timestamp format (starts with YYYY-)
+        assert!(
+            content.starts_with("20"),
+            "log line should start with timestamp, got: {content}"
+        );
+        assert!(
+            content.contains('T'),
+            "timestamp should contain T separator, got: {content}"
+        );
+        assert!(
+            content.contains('Z'),
+            "timestamp should end with Z, got: {content}"
+        );
+
+        cleanup_test_dir(&dir);
+    }
+
+    #[test]
+    fn test_write_status_logs_status_change() {
+        let dir = test_sessions_dir("status_log");
+        let mut writer = StatusWriter::new(
+            "test-status-log".to_string(),
+            "claude".to_string(),
+            dir.clone(),
+        );
+
+        writer.write_status("thinking", None, false).unwrap();
+        writer
+            .write_status("thinking", Some("Read file"), false)
+            .unwrap();
+        writer.write_status("waiting", None, false).unwrap();
+
+        let log_dir = dir.join("default");
+        let log_path = log_dir.join("test-status-log.log");
+        let content = fs::read_to_string(&log_path).unwrap();
+
+        let lines: Vec<&str> = content.lines().collect();
+        assert_eq!(lines.len(), 3, "should have 3 log lines, got: {content}");
+        assert!(
+            lines[0].contains("Status changed to: thinking"),
+            "first line: {}",
+            lines[0]
+        );
+        assert!(
+            lines[1].contains("Status changed to: thinking (Read file)"),
+            "second line: {}",
+            lines[1]
+        );
+        assert!(
+            lines[2].contains("Status changed to: waiting"),
+            "third line: {}",
+            lines[2]
         );
 
         cleanup_test_dir(&dir);
