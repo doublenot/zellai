@@ -24,6 +24,8 @@ enum PluginMode {
     Sidebar,
     /// Minimal single-line status bar segment.
     StatusBar,
+    /// Orchestrator Task Board panel.
+    TaskBoard,
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -33,7 +35,7 @@ struct ZellaiPlugin {
     attention: attention::AttentionTracker,
     /// Resolved home directory (from `echo ~`); used to expand `~` in paths.
     home_dir: Option<String>,
-    /// Rendering mode: sidebar (default) or status-bar.
+    /// Rendering mode: sidebar (default), status-bar, or task-board.
     mode: PluginMode,
     /// Workspace name shown in the status bar segment.
     workspace_name: String,
@@ -41,6 +43,12 @@ struct ZellaiPlugin {
     key_next_attention: Option<(bool, char)>,
     /// Parsed keybinding for dismiss (ctrl, char)
     key_dismiss: Option<(bool, char)>,
+    /// Parsed task board (only used in TaskBoard mode).
+    task_board_data: Option<task_board::TaskBoard>,
+    /// Task board file path.
+    task_board_path: String,
+    /// Current view mode: "kanban" or "dag".
+    task_board_view: String,
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -62,6 +70,9 @@ impl Default for ZellaiPlugin {
                 &config::KeybindingsConfig::default().next_attention,
             ),
             key_dismiss: config::parse_key(&config::KeybindingsConfig::default().dismiss),
+            task_board_data: None,
+            task_board_path: String::new(),
+            task_board_view: "kanban".to_string(),
         }
     }
 }
@@ -73,10 +84,12 @@ register_plugin!(ZellaiPlugin);
 impl ZellijPlugin for ZellaiPlugin {
     fn load(&mut self, configuration: BTreeMap<String, String>) {
         // Parse plugin mode from configuration BTreeMap.
-        // Default is "sidebar"; "status-bar" switches to status bar mode.
+        // Default is "sidebar"; "status-bar" switches to status bar mode;
+        // "task-board" switches to task board mode.
         if let Some(mode_str) = configuration.get("mode") {
             match mode_str.as_str() {
                 "status-bar" => self.mode = PluginMode::StatusBar,
+                "task-board" => self.mode = PluginMode::TaskBoard,
                 _ => self.mode = PluginMode::Sidebar,
             }
         }
@@ -86,6 +99,19 @@ impl ZellijPlugin for ZellaiPlugin {
             && !name.is_empty()
         {
             self.workspace_name = name.clone();
+        }
+
+        // Parse task board configuration (only relevant in TaskBoard mode).
+        if let Some(path) = configuration.get("task_board_path")
+            && !path.is_empty()
+        {
+            self.task_board_path = path.clone();
+        }
+        if let Some(view) = configuration.get("view") {
+            match view.as_str() {
+                "dag" => self.task_board_view = "dag".to_string(),
+                _ => self.task_board_view = "kanban".to_string(),
+            }
         }
 
         // Parse configuration from the plugin's configuration BTreeMap.
@@ -103,6 +129,11 @@ impl ZellijPlugin for ZellaiPlugin {
         // Parse keybindings from config
         self.key_next_attention = config::parse_key(&self.config.keybindings.next_attention);
         self.key_dismiss = config::parse_key(&self.config.keybindings.dismiss);
+
+        // Default the task board path if not explicitly set
+        if self.task_board_path.is_empty() {
+            self.task_board_path = format!("{}/task_board.json", self.config.bridge.sessions_dir);
+        }
 
         // Request permissions needed for file watching and running commands
         request_permission(&[
@@ -153,6 +184,15 @@ impl ZellijPlugin for ZellaiPlugin {
                     BTreeMap::from([("zellai_cmd".to_string(), "get_time".to_string())]),
                 );
 
+                // In TaskBoard mode, also read the task board file
+                if self.mode == PluginMode::TaskBoard {
+                    let tb_path = self.resolved_task_board_path();
+                    run_command(
+                        &["cat", &tb_path],
+                        BTreeMap::from([("zellai_cmd".to_string(), "read_task_board".to_string())]),
+                    );
+                }
+
                 false // don't re-render yet; wait for RunCommandResult
             }
             Event::RunCommandResult(exit_code, stdout, stderr, context) => {
@@ -171,6 +211,21 @@ impl ZellijPlugin for ZellaiPlugin {
                 true
             }
             Event::Key(key) => {
+                // In TaskBoard mode, Tab toggles between kanban and dag views
+                if self.mode == PluginMode::TaskBoard {
+                    let tab_key = KeyWithModifier {
+                        bare_key: BareKey::Tab,
+                        key_modifiers: std::collections::BTreeSet::new(),
+                    };
+                    if key == tab_key {
+                        self.task_board_view = if self.task_board_view == "kanban" {
+                            "dag".to_string()
+                        } else {
+                            "kanban".to_string()
+                        };
+                        return true;
+                    }
+                }
                 // Handle next_attention keybinding
                 if let Some((ctrl, ch)) = self.key_next_attention {
                     let mut expected_modifiers = std::collections::BTreeSet::new();
@@ -224,6 +279,23 @@ impl ZellijPlugin for ZellaiPlugin {
             PluginMode::StatusBar => {
                 let line = status_bar::render_status_bar(&agent_refs, &self.workspace_name, cols);
                 print!("{}", line);
+            }
+            PluginMode::TaskBoard => {
+                let board = self.task_board_data.as_ref().cloned().unwrap_or_default();
+                // Reserve 1 row for the stats line at the bottom
+                let board_rows = rows.saturating_sub(1);
+                let lines = if self.task_board_view == "dag" {
+                    task_board::render_dag(&board, board_rows, cols)
+                } else {
+                    task_board::render_kanban(&board, board_rows, cols)
+                };
+                for line in lines {
+                    println!("{}", line);
+                }
+                // Render stats line at the bottom
+                let stats = board.aggregate_stats();
+                let stats_line = task_board::render_stats_line(&stats, cols);
+                print!("{}", stats_line);
             }
         }
     }
@@ -323,6 +395,18 @@ impl ZellaiPlugin {
                 }
                 false
             }
+            "read_task_board" => {
+                if exit_code == Some(0) {
+                    let stdout_str = String::from_utf8_lossy(&stdout);
+                    if let Ok(board) = task_board::parse_task_board(&stdout_str) {
+                        self.task_board_data = Some(board);
+                    }
+                } else {
+                    // File doesn't exist or is unreadable — clear data
+                    self.task_board_data = None;
+                }
+                true // trigger re-render
+            }
             _ => false,
         }
     }
@@ -339,5 +423,16 @@ impl ZellaiPlugin {
             return format!("{}{}", home, rest);
         }
         raw
+    }
+
+    /// Return the task board file path with `~` expanded to the resolved home path.
+    fn resolved_task_board_path(&self) -> String {
+        let raw = &self.task_board_path;
+        if let Some(ref home) = self.home_dir
+            && let Some(rest) = raw.strip_prefix('~')
+        {
+            return format!("{}{}", home, rest);
+        }
+        raw.clone()
     }
 }
