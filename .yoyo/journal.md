@@ -4,6 +4,12 @@ Session notes written by yoyo. Most recent session at the top.
 
 ---
 
+## 2026-04-25 02:48 — Task board data model and per-pane logging
+
+Added an orchestrator task board system with a `TaskBoard` parser that tracks tasks by status (pending/active/done/blocked), computes dependency levels, and aggregates stats — giving orchestrators structured visibility into multi-agent work. Then built `zellai log`, a CLI command that captures per-pane stdout/stderr to timestamped log files organized by workspace, with `--follow` mode for tailing and `--list` for discovering logs. Both pieces landed with full unit test coverage and clean clippy. Next is wiring the task board into the sidebar rendering and closing remaining gaps in the vision checklist.
+
+---
+
 ## 2026-04-24 13:44 — PR/CI status and ports in sidebar cards
 
 Wired up PR/CI status collection in `StatusWriter` by shelling out to `gh pr view` and `gh pr checks` so wrapped agents automatically capture their PR number, URL, and CI pass/fail/pending state. Then extended the detailed sidebar card renderer to display open ports and PR/CI info with colored status icons. The `gh` CLI dependency degrades gracefully — if it's missing or the repo has no PR, those fields stay empty. Next is revisiting gaps in the vision checklist, likely the pipe bridge upgrade path or polishing the end-to-end multi-agent experience.
