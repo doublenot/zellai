@@ -372,6 +372,9 @@ impl ZellaiPlugin {
                 // Remove sessions whose files no longer exist on disk
                 self.bridge.retain_sessions(&session_ids);
 
+                // Prune dismissed entries for dead sessions to bound memory
+                self.attention.prune_dismissed(&session_ids);
+
                 for line in stdout_str.lines() {
                     let filename = line.trim();
                     if filename.is_empty() || !filename.ends_with(".json") {

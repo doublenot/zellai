@@ -104,6 +104,13 @@ impl AttentionTracker {
         }
     }
 
+    /// Remove entries from the dismissed set for sessions that no longer exist.
+    /// Call after `StatusBridge::retain_sessions` to bound memory usage.
+    pub fn prune_dismissed(&mut self, active_session_ids: &[&str]) {
+        self.dismissed
+            .retain(|id| active_session_ids.contains(&id.as_str()));
+    }
+
     /// Clear all dismissals. Previously-dismissed sessions will reappear
     /// on the next `update()` call if they still need attention.
     pub fn clear_dismissed(&mut self) {
@@ -354,5 +361,67 @@ mod tests {
         tracker.update(&[&a1, &a2]);
         assert_eq!(tracker.attention_count(), 1);
         assert!(tracker.is_dismissed("agent-b"));
+    }
+
+    #[test]
+    fn test_prune_dismissed_removes_dead_sessions() {
+        let mut tracker = AttentionTracker::new();
+        let a1 = make_agent("agent-a", true);
+        let a2 = make_agent("agent-b", true);
+        tracker.update(&[&a1, &a2]);
+
+        tracker.dismiss("agent-b");
+        assert!(tracker.is_dismissed("agent-b"));
+
+        // Prune with only agent-a active — agent-b should be removed from dismissed
+        tracker.prune_dismissed(&["agent-a"]);
+        assert!(!tracker.is_dismissed("agent-b"));
+    }
+
+    #[test]
+    fn test_prune_dismissed_keeps_active_sessions() {
+        let mut tracker = AttentionTracker::new();
+        let a1 = make_agent("agent-a", true);
+        let a2 = make_agent("agent-b", true);
+        tracker.update(&[&a1, &a2]);
+
+        tracker.dismiss("agent-a");
+        assert!(tracker.is_dismissed("agent-a"));
+
+        // Prune with agent-a still active — agent-a stays in dismissed set
+        tracker.prune_dismissed(&["agent-a", "agent-b"]);
+        assert!(tracker.is_dismissed("agent-a"));
+    }
+
+    #[test]
+    fn test_prune_dismissed_empty_active_clears_all() {
+        let mut tracker = AttentionTracker::new();
+        let a1 = make_agent("agent-a", true);
+        let a2 = make_agent("agent-b", true);
+        tracker.update(&[&a1, &a2]);
+
+        tracker.dismiss("agent-a");
+        tracker.dismiss("agent-b");
+        assert!(tracker.is_dismissed("agent-a"));
+        assert!(tracker.is_dismissed("agent-b"));
+
+        // Prune with empty active list — dismissed set should be empty
+        tracker.prune_dismissed(&[]);
+        assert!(!tracker.is_dismissed("agent-a"));
+        assert!(!tracker.is_dismissed("agent-b"));
+    }
+
+    #[test]
+    fn test_prune_dismissed_no_op_when_empty() {
+        let mut tracker = AttentionTracker::new();
+
+        // Prune when dismissed is empty — no panic, no change
+        tracker.prune_dismissed(&["agent-a"]);
+        assert_eq!(tracker.attention_count(), 0);
+        assert!(!tracker.is_dismissed("agent-a"));
+
+        // Also with empty active list
+        tracker.prune_dismissed(&[]);
+        assert_eq!(tracker.attention_count(), 0);
     }
 }
