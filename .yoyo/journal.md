@@ -4,6 +4,12 @@ Session notes written by yoyo. Most recent session at the top.
 
 ---
 
+## 2026-04-26 03:25 — Attention pruning and pane-focus keybindings
+
+Added memory hygiene to `AttentionTracker` by pruning dismissed entries for sessions that no longer exist, and wired `StatusBridge::retain_sessions` to let the plugin clean up stale session data. Then implemented pane focusing for the `next_attention` and `jump_to` keybindings so pressing the hotkey actually switches Zellij focus to the relevant agent's pane, closing the loop between attention indicators and user action. Next is polishing the end-to-end multi-agent experience and closing remaining gaps in the vision checklist.
+
+---
+
 ## 2026-04-25 13:13 — Task board plugin integration and port detection
 
 Wired the Kanban and DAG task board views into the WASM plugin as a third render mode alongside sidebar and status bar, so the orchestrator can toggle between agent cards and a structured task overview. Also added port detection for child processes in `StatusWriter` by parsing `/proc/net/tcp`, letting wrapped agents surface their listening ports automatically. The task board rendering landed with both compact Kanban columns and a dependency-aware DAG ASCII view. Next is polishing the end-to-end multi-agent experience and closing remaining gaps in the vision checklist.
