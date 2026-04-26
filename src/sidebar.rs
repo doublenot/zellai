@@ -108,11 +108,15 @@ const CHROME_ROWS: usize = 2;
 ///
 /// Each string is exactly `cols` characters wide (padded or truncated).
 /// Layout: top border, title bar, agent cards, fill space, bottom border.
+///
+/// `selected_session_id` — if `Some`, the card whose `session_id` matches gets
+/// a `▶` prefix to indicate the attention cursor position.
 pub fn render_sidebar(
     agents: &[&AgentStatus],
     config: &SidebarConfig,
     rows: usize,
     cols: usize,
+    selected_session_id: Option<&str>,
 ) -> Vec<String> {
     if rows == 0 || cols == 0 {
         return Vec::new();
@@ -161,9 +165,10 @@ pub fn render_sidebar(
                 ResolvedDensity::AllCompact => false,
                 ResolvedDensity::Mixed => agent.needs_attention,
             };
+            let is_selected = selected_session_id == Some(agent.session_id.as_str());
 
             if is_detailed {
-                let card_lines = render_detailed_card(agent, cols);
+                let card_lines = render_detailed_card(agent, cols, is_selected);
                 for line in card_lines {
                     if used_rows >= available {
                         break;
@@ -172,7 +177,7 @@ pub fn render_sidebar(
                     used_rows += 1;
                 }
             } else {
-                let line = render_compact_card(agent, cols);
+                let line = render_compact_card(agent, cols, is_selected);
                 lines.push(line);
                 used_rows += 1;
             }
@@ -201,14 +206,16 @@ pub fn render_sidebar(
 /// Render a single-line compact card for an agent.
 ///
 /// Format: `│ ●icon name [branch] status │`
+/// When `is_selected` is true, a `▶` prefix replaces the leading space.
 /// The icon and status text are colored by agent status.
 /// Branch name is colored in cyan.
 /// The returned string has a visible width of exactly `width` characters.
-pub fn render_compact_card(agent: &AgentStatus, width: usize) -> String {
+pub fn render_compact_card(agent: &AgentStatus, width: usize, is_selected: bool) -> String {
     let icon = status_icon(&agent.status);
     let name = agent_display_name(agent);
     let status_str = agent.status.to_string().to_lowercase();
     let color = status_color(&agent.status);
+    let prefix = if is_selected { "▶" } else { " " };
 
     let branch_part = match &agent.git_branch {
         Some(b) => format!(" {}[{}]{}", CYAN, b, RESET),
@@ -216,7 +223,8 @@ pub fn render_compact_card(agent: &AgentStatus, width: usize) -> String {
     };
 
     let content = format!(
-        " {color}{icon}{reset} {name}{branch} {color}{status}{reset} ",
+        " {prefix}{color}{icon}{reset} {name}{branch} {color}{status}{reset} ",
+        prefix = prefix,
         color = color,
         icon = icon,
         reset = RESET,
@@ -230,21 +238,24 @@ pub fn render_compact_card(agent: &AgentStatus, width: usize) -> String {
 /// Render a 4-line detailed card for an agent.
 ///
 /// Line 1: `│ ● name — status │`  (icon + status colored)
+/// When `is_selected` is true, line 1 gets a `▶` prefix.
 /// Line 2: `│   branch ● /working/dir │`  (branch in cyan)
 /// Line 3: `│   🔌 :3000 | PR #42 ✓ passing │`  (ports + PR/CI, or dim separator)
 /// Line 4: `│   last_message… │`
 ///
 /// Each line has a visible width of exactly `width` characters.
-pub fn render_detailed_card(agent: &AgentStatus, width: usize) -> Vec<String> {
+pub fn render_detailed_card(agent: &AgentStatus, width: usize, is_selected: bool) -> Vec<String> {
     let inner_width = width.saturating_sub(4); // "│ " + " │"
     let icon = status_icon(&agent.status);
     let name = agent_display_name(agent);
     let status_str = agent.status.to_string().to_lowercase();
     let color = status_color(&agent.status);
+    let prefix = if is_selected { "▶" } else { " " };
 
     // Line 1: icon + name — status (icon and status colored)
     let line1_content = format!(
-        " {color}{icon}{reset} {name} — {color}{status}{reset} ",
+        " {prefix}{color}{icon}{reset} {name} — {color}{status}{reset} ",
+        prefix = prefix,
         color = color,
         icon = icon,
         reset = RESET,
@@ -593,6 +604,7 @@ mod tests {
             pr_ci_status: None,
             needs_attention,
             updated_at: 1000,
+            pane_id: None,
         }
     }
 
@@ -745,7 +757,7 @@ mod tests {
             Some("Reading file"),
             false,
         );
-        let line = render_compact_card(&agent, 40);
+        let line = render_compact_card(&agent, 40, false);
         let plain = strip_ansi(&line);
         assert!(plain.starts_with('│'));
         assert!(plain.ends_with('│'));
@@ -767,7 +779,7 @@ mod tests {
             None,
             false,
         );
-        let line = render_compact_card(&agent, 30);
+        let line = render_compact_card(&agent, 30, false);
         let plain = strip_ansi(&line);
         assert_eq!(visible_char_count(&line), 30);
         assert!(plain.contains("○"));
@@ -788,7 +800,7 @@ mod tests {
             None,
             false,
         );
-        let line = render_compact_card(&agent, 40);
+        let line = render_compact_card(&agent, 40, false);
         // Should contain ANSI green for thinking
         assert!(line.contains(GREEN));
         // Should contain ANSI cyan for branch
@@ -815,7 +827,7 @@ mod tests {
                 None,
                 matches!(status, AgentStatusValue::Waiting),
             );
-            let line = render_compact_card(&agent, 50);
+            let line = render_compact_card(&agent, 50, false);
             assert_eq!(
                 visible_char_count(&line),
                 50,
@@ -840,7 +852,7 @@ mod tests {
             Some("Reading src/auth.ts…"),
             false,
         );
-        let lines = render_detailed_card(&agent, 50);
+        let lines = render_detailed_card(&agent, 50, false);
         assert_eq!(lines.len(), 4);
         for line in &lines {
             let plain = strip_ansi(line);
@@ -880,7 +892,7 @@ mod tests {
             None,
             false,
         );
-        let lines = render_detailed_card(&agent, 40);
+        let lines = render_detailed_card(&agent, 40, false);
         assert_eq!(lines.len(), 4);
         let plain3 = strip_ansi(&lines[3]);
         assert!(plain3.contains("(no message)"));
@@ -897,7 +909,7 @@ mod tests {
             Some("Crashed"),
             false,
         );
-        let lines = render_detailed_card(&agent, 50);
+        let lines = render_detailed_card(&agent, 50, false);
         // Line 1 should have RED for error status
         assert!(lines[0].contains(RED));
         // Line 2 should have CYAN for branch
@@ -921,7 +933,7 @@ mod tests {
                 Some("Some message text here"),
                 matches!(status, AgentStatusValue::Waiting),
             );
-            let lines = render_detailed_card(&agent, 50);
+            let lines = render_detailed_card(&agent, 50, false);
             for (i, line) in lines.iter().enumerate() {
                 assert_eq!(
                     visible_char_count(line),
@@ -997,7 +1009,7 @@ mod tests {
     fn test_render_sidebar_empty_agents() {
         let config = default_sidebar_config();
         let agents: Vec<&AgentStatus> = vec![];
-        let lines = render_sidebar(&agents, &config, 10, 40);
+        let lines = render_sidebar(&agents, &config, 10, 40, None);
         assert_eq!(lines.len(), 10);
         // First line: top border
         let plain0 = strip_ansi(&lines[0]);
@@ -1039,7 +1051,7 @@ mod tests {
         );
         let agents: Vec<&AgentStatus> = vec![&a1, &a2];
         let config = default_sidebar_config();
-        let lines = render_sidebar(&agents, &config, 20, 40);
+        let lines = render_sidebar(&agents, &config, 20, 40, None);
         assert_eq!(lines.len(), 20);
         // All lines should have visible width of exactly 40 chars
         for (i, line) in lines.iter().enumerate() {
@@ -1057,7 +1069,7 @@ mod tests {
     fn test_render_sidebar_zero_rows() {
         let config = default_sidebar_config();
         let agents: Vec<&AgentStatus> = vec![];
-        let lines = render_sidebar(&agents, &config, 0, 40);
+        let lines = render_sidebar(&agents, &config, 0, 40, None);
         assert!(lines.is_empty());
     }
 
@@ -1065,7 +1077,7 @@ mod tests {
     fn test_render_sidebar_zero_cols() {
         let config = default_sidebar_config();
         let agents: Vec<&AgentStatus> = vec![];
-        let lines = render_sidebar(&agents, &config, 10, 0);
+        let lines = render_sidebar(&agents, &config, 10, 0, None);
         assert!(lines.is_empty());
     }
 
@@ -1102,7 +1114,7 @@ mod tests {
         // Give enough space for mixed (1*4 + 2*1 = 6 agent rows + 2 chrome = 8)
         let mut config = default_sidebar_config();
         config.card_density = CardDensity::Adaptive;
-        let lines = render_sidebar(&agents, &config, 10, 50);
+        let lines = render_sidebar(&agents, &config, 10, 50, None);
         assert_eq!(lines.len(), 10);
         // The waiting agent should appear somewhere (it needs attention)
         let all = lines.join("\n");
@@ -1228,6 +1240,7 @@ mod tests {
             pr_ci_status,
             needs_attention,
             updated_at: 1000,
+            pane_id: None,
         }
     }
 
@@ -1245,7 +1258,7 @@ mod tests {
             None,
             None,
         );
-        let lines = render_detailed_card(&agent, 50);
+        let lines = render_detailed_card(&agent, 50, false);
         assert_eq!(lines.len(), 4);
         let plain2 = strip_ansi(&lines[2]);
         assert!(
@@ -1279,7 +1292,7 @@ mod tests {
             Some(42),
             Some(CiStatus::Passing),
         );
-        let lines = render_detailed_card(&agent, 50);
+        let lines = render_detailed_card(&agent, 50, false);
         assert_eq!(lines.len(), 4);
         let plain2 = strip_ansi(&lines[2]);
         assert!(
@@ -1316,7 +1329,7 @@ mod tests {
             Some(99),
             Some(CiStatus::Failing),
         );
-        let lines = render_detailed_card(&agent, 60);
+        let lines = render_detailed_card(&agent, 60, false);
         assert_eq!(lines.len(), 4);
         let plain2 = strip_ansi(&lines[2]);
         assert!(plain2.contains(":3000"), "should show port: '{}'", plain2);
@@ -1343,7 +1356,7 @@ mod tests {
             None,
             false,
         );
-        let lines = render_detailed_card(&agent, 40);
+        let lines = render_detailed_card(&agent, 40, false);
         assert_eq!(lines.len(), 4);
         // Line 3 should be a dim separator (─)
         let plain2 = strip_ansi(&lines[2]);
@@ -1369,7 +1382,7 @@ mod tests {
             Some(7),
             None,
         );
-        let lines = render_detailed_card(&agent, 50);
+        let lines = render_detailed_card(&agent, 50, false);
         assert_eq!(lines.len(), 4);
         let plain2 = strip_ansi(&lines[2]);
         assert!(
@@ -1399,7 +1412,7 @@ mod tests {
             Some(15),
             Some(CiStatus::Pending),
         );
-        let lines = render_detailed_card(&agent, 50);
+        let lines = render_detailed_card(&agent, 50, false);
         assert_eq!(lines.len(), 4);
         let plain2 = strip_ansi(&lines[2]);
         assert!(

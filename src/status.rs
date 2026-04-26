@@ -75,6 +75,9 @@ pub struct AgentStatus {
     pub pr_ci_status: Option<CiStatus>,
     pub needs_attention: bool,
     pub updated_at: u64,
+    /// Zellij terminal pane ID for this agent session (optional; used for focus).
+    #[serde(default)]
+    pub pane_id: Option<u32>,
 }
 
 impl AgentStatus {

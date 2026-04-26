@@ -43,6 +43,8 @@ struct ZellaiPlugin {
     key_next_attention: Option<(bool, char)>,
     /// Parsed keybinding for dismiss (ctrl, char)
     key_dismiss: Option<(bool, char)>,
+    /// Parsed keybinding for jump_to (ctrl, char)
+    key_jump_to: Option<(bool, char)>,
     /// Parsed task board (only used in TaskBoard mode).
     task_board_data: Option<task_board::TaskBoard>,
     /// Task board file path.
@@ -70,6 +72,7 @@ impl Default for ZellaiPlugin {
                 &config::KeybindingsConfig::default().next_attention,
             ),
             key_dismiss: config::parse_key(&config::KeybindingsConfig::default().dismiss),
+            key_jump_to: config::parse_key(&config::KeybindingsConfig::default().jump_to),
             task_board_data: None,
             task_board_path: String::new(),
             task_board_view: "kanban".to_string(),
@@ -129,6 +132,7 @@ impl ZellijPlugin for ZellaiPlugin {
         // Parse keybindings from config
         self.key_next_attention = config::parse_key(&self.config.keybindings.next_attention);
         self.key_dismiss = config::parse_key(&self.config.keybindings.dismiss);
+        self.key_jump_to = config::parse_key(&self.config.keybindings.jump_to);
 
         // Default the task board path if not explicitly set
         if self.task_board_path.is_empty() {
@@ -237,8 +241,31 @@ impl ZellijPlugin for ZellaiPlugin {
                         key_modifiers: expected_modifiers,
                     };
                     if key == expected {
-                        self.attention.next_attention();
-                        // TODO: map session_id to Zellij pane ID for focus_terminal_pane
+                        if let Some(session_id) =
+                            self.attention.next_attention().map(|s| s.to_string())
+                            && let Some(pane_id) = self.pane_id_for_session(&session_id)
+                        {
+                            focus_terminal_pane(pane_id, false, false);
+                        }
+                        return true;
+                    }
+                }
+                // Handle jump_to keybinding
+                if let Some((ctrl, ch)) = self.key_jump_to {
+                    let mut expected_modifiers = std::collections::BTreeSet::new();
+                    if ctrl {
+                        expected_modifiers.insert(KeyModifier::Ctrl);
+                    }
+                    let expected = KeyWithModifier {
+                        bare_key: BareKey::Char(ch),
+                        key_modifiers: expected_modifiers,
+                    };
+                    if key == expected {
+                        if let Some(session_id) = self.attention.current().map(|s| s.to_string())
+                            && let Some(pane_id) = self.pane_id_for_session(&session_id)
+                        {
+                            focus_terminal_pane(pane_id, false, false);
+                        }
                         return true;
                     }
                 }
@@ -271,7 +298,14 @@ impl ZellijPlugin for ZellaiPlugin {
 
         match self.mode {
             PluginMode::Sidebar => {
-                let lines = sidebar::render_sidebar(&agent_refs, &self.config.sidebar, rows, cols);
+                let selected = self.attention.current();
+                let lines = sidebar::render_sidebar(
+                    &agent_refs,
+                    &self.config.sidebar,
+                    rows,
+                    cols,
+                    selected,
+                );
                 for line in lines {
                     println!("{}", line);
                 }
@@ -434,5 +468,17 @@ impl ZellaiPlugin {
             return format!("{}{}", home, rest);
         }
         raw.clone()
+    }
+
+    /// Look up the Zellij terminal pane ID for a given session_id.
+    ///
+    /// The `pane_id` field is an optional `u32` stored in each `AgentStatus`.
+    /// Returns `None` if the session doesn't exist or has no pane_id set.
+    fn pane_id_for_session(&self, session_id: &str) -> Option<u32> {
+        let agents = self.bridge.agents_sorted();
+        agents
+            .iter()
+            .find(|a| a.session_id == session_id)
+            .and_then(|a| a.pane_id)
     }
 }

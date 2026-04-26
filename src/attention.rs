@@ -152,6 +152,7 @@ mod tests {
             pr_ci_status: None,
             needs_attention,
             updated_at: 1000,
+            pane_id: None,
         }
     }
 

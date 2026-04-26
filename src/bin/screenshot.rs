@@ -28,6 +28,7 @@ fn sample_agents() -> Vec<AgentStatus> {
             pr_ci_status: None,
             needs_attention: false,
             updated_at: 1745467200,
+            pane_id: None,
         },
         AgentStatus {
             version: 1,
@@ -43,6 +44,7 @@ fn sample_agents() -> Vec<AgentStatus> {
             pr_ci_status: None,
             needs_attention: true,
             updated_at: 1745467200,
+            pane_id: None,
         },
         AgentStatus {
             version: 1,
@@ -58,6 +60,7 @@ fn sample_agents() -> Vec<AgentStatus> {
             pr_ci_status: None,
             needs_attention: false,
             updated_at: 1745467200,
+            pane_id: None,
         },
         AgentStatus {
             version: 1,
@@ -73,6 +76,7 @@ fn sample_agents() -> Vec<AgentStatus> {
             pr_ci_status: None,
             needs_attention: false,
             updated_at: 1745467200,
+            pane_id: None,
         },
         AgentStatus {
             version: 1,
@@ -90,6 +94,7 @@ fn sample_agents() -> Vec<AgentStatus> {
             // but for the screenshot we want to show the attention indicator.
             needs_attention: true,
             updated_at: 1745467200,
+            pane_id: None,
         },
     ]
 }
@@ -103,7 +108,7 @@ fn main() {
     let rows: usize = 17;
 
     // Render sidebar
-    let sidebar_lines = render_sidebar(&agent_refs, &config, rows, cols);
+    let sidebar_lines = render_sidebar(&agent_refs, &config, rows, cols, None);
 
     println!("┌─────────────────────────────────────────┐");
     println!("│  zellai — AI agent workspace for Zellij  │");
